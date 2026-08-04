@@ -2,6 +2,8 @@
 
 CodeAtlas 是一个面向人和 AI 的本地代码知识空间。
 
+![CodeAtlas MVP focused call graph](docs/assets/codeatlas-mvp.png)
+
 它在指定工作空间中生成完整代码图谱，并以全景图、目录图、代码结构图、方法图、调用图等不同视图呈现同一份底层知识。用户可以从任意节点切入，探索、验证并持续积累项目知识；AI 则通过 MCP 使用同一份图谱、视角和人工知识。
 
 ## 产品原则
@@ -42,6 +44,25 @@ codeatlas open
 - [产品与系统设计](docs/plans/2026-08-04-codeatlas-design.md)
 - [架构决策记录](docs/adr/README.md)
 
-## 当前状态
+## 开发预览
 
-项目处于设计完成、可进入 MVP 实施的阶段。
+当前纵向切片已经可以运行：
+
+```bash
+npm install
+npm run build
+node dist/cli.js init /path/to/workspace
+node dist/cli.js open /path/to/workspace
+```
+
+浏览器界面支持完整空间、目录、代码结构、方法和调用视图，以及搜索、节点证据和上下游聚焦。
+
+验证命令：
+
+```bash
+npm run typecheck
+npm test
+npm run test:e2e
+```
+
+当前仍属于 MVP 纵向切片。保存视角、人工知识、MCP、数据库关系图和完整数据链路图尚未实现。

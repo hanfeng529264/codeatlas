@@ -1,0 +1,213 @@
+:root {
+  color: #dbe4df;
+  background: #07100f;
+  font-family: "Avenir Next", "Futura", "PingFang SC", sans-serif;
+  font-synthesis: none;
+  --ink: #dbe4df;
+  --muted: #7f9690;
+  --faint: #455954;
+  --line: rgba(150, 183, 172, 0.16);
+  --line-strong: rgba(168, 200, 189, 0.28);
+  --panel: rgba(9, 19, 17, 0.92);
+  --canvas: #071210;
+  --amber: #f2b84b;
+  --amber-soft: rgba(242, 184, 75, 0.14);
+  --cyan: #5dc9c1;
+  --danger: #ff8066;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+
+button, input { font: inherit; }
+button { color: inherit; }
+
+body {
+  background:
+    radial-gradient(circle at 68% 48%, rgba(45, 85, 73, 0.14), transparent 32%),
+    linear-gradient(120deg, #07100f 0%, #0b1714 47%, #06100e 100%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.93' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+  z-index: 1000;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 248px minmax(420px, 1fr) 294px;
+  grid-template-rows: 66px 1fr;
+  width: 100%;
+  height: 100%;
+}
+
+.topbar {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 248px minmax(360px, 720px) 1fr;
+  align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+  background: rgba(5, 14, 12, 0.95);
+  backdrop-filter: blur(18px);
+  z-index: 20;
+}
+
+.brand-block {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 20px;
+  border-right: 1px solid var(--line);
+}
+
+.brand-mark { position: relative; width: 28px; height: 28px; transform: rotate(30deg); }
+.brand-mark span { position: absolute; width: 7px; height: 7px; border: 1px solid var(--amber); border-radius: 50%; }
+.brand-mark span:nth-child(1) { left: 2px; top: 9px; background: var(--amber); box-shadow: 0 0 14px rgba(242,184,75,.4); }
+.brand-mark span:nth-child(2) { right: 2px; top: 2px; }
+.brand-mark span:nth-child(3) { right: 2px; bottom: 2px; }
+.brand-mark::before, .brand-mark::after { content: ""; position: absolute; height: 1px; background: var(--amber); transform-origin: left; left: 8px; top: 12px; width: 17px; }
+.brand-mark::before { transform: rotate(-30deg); }
+.brand-mark::after { transform: rotate(30deg); }
+
+.brand { font: 700 17px/1 "Avenir Next Condensed", "DIN Alternate", sans-serif; letter-spacing: .18em; }
+.brand-subtitle { margin-top: 5px; color: var(--muted); font-size: 8px; letter-spacing: .22em; }
+
+.search { position: relative; height: 38px; margin-left: 24px; max-width: 620px; border: 1px solid var(--line-strong); background: rgba(12, 27, 23, .72); display: flex; align-items: center; }
+.search:focus-within { border-color: rgba(242,184,75,.58); box-shadow: inset 0 -1px var(--amber); }
+.search-index { padding: 0 12px; color: var(--amber); font-size: 18px; }
+.search input { width: 100%; border: 0; outline: 0; color: var(--ink); background: transparent; letter-spacing: .02em; }
+.search input::placeholder { color: #5f746e; }
+.search-submit { margin-right: 9px; border: 1px solid var(--line-strong); padding: 2px 7px; color: var(--muted); background: #08120f; font-size: 10px; cursor: pointer; }
+.search-submit:hover { color: var(--amber); border-color: rgba(242,184,75,.45); }
+.search-results { position: absolute; left: -1px; right: -1px; top: 43px; max-height: 360px; overflow: auto; border: 1px solid var(--line-strong); background: rgba(6,16,14,.98); box-shadow: 0 20px 50px rgba(0,0,0,.45); z-index: 100; }
+.search-results button { width: 100%; display: grid; grid-template-columns: 76px 1fr; gap: 4px 12px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+.search-results button:hover { background: var(--amber-soft); }
+.search-results .result-kind { grid-row: 1 / 3; align-self: center; color: var(--cyan); font-size: 9px; text-transform: uppercase; letter-spacing: .1em; }
+.search-results small { color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.system-state { justify-self: end; display: flex; align-items: center; gap: 10px; padding-right: 22px; }
+.system-state strong, .system-state small { display: block; font: 600 9px/1.5 "Avenir Next Condensed", sans-serif; letter-spacing: .14em; }
+.system-state small { color: var(--muted); }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 5px rgba(93,201,193,.08), 0 0 16px rgba(93,201,193,.6); animation: pulse 2.2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 9px rgba(93,201,193,0), 0 0 22px rgba(93,201,193,.65); } }
+
+.left-rail, .detail-panel { min-height: 0; background: var(--panel); }
+.left-rail { border-right: 1px solid var(--line-strong); overflow-y: auto; }
+.detail-panel { border-left: 1px solid var(--line-strong); overflow-y: auto; }
+.rail-label { display: block; color: #668079; font: 600 8px/1 "Avenir Next Condensed", sans-serif; letter-spacing: .2em; text-transform: uppercase; }
+
+.workspace-identity { padding: 23px 20px 20px; border-bottom: 1px solid var(--line); }
+.workspace-identity h2 { margin: 12px 0 5px; font: 600 20px/1.1 "Avenir Next Condensed", sans-serif; letter-spacing: .04em; }
+.workspace-identity p { margin: 0; color: var(--muted); font: 10px/1.5 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.view-nav { padding: 20px 0 12px; border-bottom: 1px solid var(--line); }
+.view-nav > .rail-label { padding: 0 20px 12px; }
+.view-nav button { position: relative; width: 100%; height: 58px; display: grid; grid-template-columns: 35px 1fr 20px; align-items: center; padding: 0 18px; border: 0; border-top: 1px solid transparent; border-bottom: 1px solid transparent; background: transparent; text-align: left; cursor: pointer; transition: .18s ease; }
+.view-nav button:hover { background: rgba(93,201,193,.045); }
+.view-nav button.active { color: #fff2cf; border-color: rgba(242,184,75,.17); background: linear-gradient(90deg, var(--amber-soft), transparent 84%); }
+.view-nav button.active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; background: var(--amber); box-shadow: 0 0 14px rgba(242,184,75,.55); }
+.view-code { color: #526760; font: 10px ui-monospace, monospace; }
+.active .view-code { color: var(--amber); }
+.view-name { font: 500 14px/1.1 "Avenir Next", sans-serif; }
+.view-name small { display: block; margin-top: 5px; color: #60756f; font-size: 7px; letter-spacing: .17em; }
+.view-arrow { color: #536862; opacity: 0; transform: translate(-5px, 5px); transition: .2s; }
+.view-nav button:hover .view-arrow, .view-nav button.active .view-arrow { opacity: 1; transform: none; }
+
+.composition, .legend { padding: 19px 20px; border-bottom: 1px solid var(--line); }
+.composition > .rail-label, .legend > .rail-label { margin-bottom: 13px; }
+.composition-row { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 8px; padding: 5px 0; color: #91a69f; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.composition-row strong { color: var(--ink); font: 10px ui-monospace, monospace; }
+.kind-dot { width: 5px; height: 5px; border-radius: 50%; background: #a9b8b2; }
+.kind-workspace { background: var(--amber); }.kind-project { background: #f0d58a; }.kind-directory { background: #647d76; }.kind-file { background: #8db2a5; }.kind-class,.kind-function,.kind-method { background: var(--cyan); }
+.legend div { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: var(--muted); font-size: 10px; }
+.legend i { display: inline-block; width: 28px; height: 1px; background: #73918a; }
+.legend .line-dashed { background: repeating-linear-gradient(90deg,#73918a 0 4px,transparent 4px 7px); }
+
+.map-stage { min-width: 0; min-height: 0; display: grid; grid-template-rows: 76px 1fr 54px; background: var(--canvas); }
+.stage-header { display: flex; align-items: center; justify-content: space-between; padding: 0 22px; border-bottom: 1px solid var(--line); background: rgba(8,19,16,.82); }
+.stage-kicker { color: var(--amber); font: 600 8px/1 "Avenir Next Condensed", sans-serif; letter-spacing: .2em; }
+.stage-header h1 { margin: 7px 0 0; font: 500 22px/1 "Avenir Next Condensed", sans-serif; letter-spacing: .04em; }
+.stage-actions { display: flex; align-items: center; gap: 12px; }
+.stage-actions button { border: 1px solid var(--line-strong); padding: 8px 12px; background: #0b1815; cursor: pointer; font-size: 10px; }
+.data-complete, .data-warning { padding: 6px 9px; border: 1px solid rgba(93,201,193,.25); color: var(--cyan); font: 700 8px ui-monospace, monospace; letter-spacing: .14em; }
+.data-warning { border-color: rgba(255,128,102,.35); color: var(--danger); }
+
+.map-frame { position: relative; min-height: 0; overflow: hidden; background-color: #071210; background-image: linear-gradient(rgba(122,158,147,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(122,158,147,.055) 1px, transparent 1px), linear-gradient(rgba(122,158,147,.022) 1px, transparent 1px), linear-gradient(90deg, rgba(122,158,147,.022) 1px, transparent 1px); background-size: 72px 72px,72px 72px,12px 12px,12px 12px; }
+.map-frame::before, .map-frame::after { content: ""; position: absolute; pointer-events: none; z-index: 3; }
+.map-frame::before { inset: 14px; border: 1px solid rgba(164,197,186,.12); }
+.map-frame::after { left: 50%; top: 50%; width: 26px; height: 26px; border-left: 1px solid rgba(242,184,75,.18); border-top: 1px solid rgba(242,184,75,.18); transform: translate(-50%,-50%) rotate(45deg); }
+.graph-canvas { position: absolute; inset: 0; cursor: grab; }
+.coordinate { position: absolute; z-index: 4; color: #50645f; font: 7px ui-monospace, monospace; letter-spacing: .12em; pointer-events: none; }
+.coordinate-nw { top: 22px; left: 24px; }.coordinate-se { right: 24px; bottom: 22px; }
+.scale-mark { position: absolute; left: 25px; bottom: 22px; z-index: 4; display: flex; align-items: center; gap: 7px; color: #597069; font: 7px ui-monospace, monospace; }
+.scale-mark i { width: 55px; height: 5px; border-left: 1px solid #597069; border-right: 1px solid #597069; border-bottom: 1px solid #597069; }
+.loading-plate { position: absolute; inset: 0; z-index: 12; display: grid; place-content: center; gap: 12px; background: rgba(5,14,12,.7); backdrop-filter: blur(2px); color: var(--amber); font: 8px ui-monospace, monospace; letter-spacing: .18em; }
+.loading-plate span { justify-self: center; width: 34px; height: 34px; border: 1px solid rgba(242,184,75,.25); border-top-color: var(--amber); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.map-status { display: grid; grid-template-columns: repeat(4, minmax(90px,1fr)); border-top: 1px solid var(--line-strong); background: #081310; }
+.map-status div { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-right: 1px solid var(--line); }
+.map-status span { color: #5e746d; font-size: 7px; letter-spacing: .15em; }
+.map-status strong { color: #c8d3ce; font: 11px ui-monospace, monospace; }
+.map-status p { position: absolute; bottom: 60px; left: 270px; color: var(--danger); font-size: 10px; }
+
+.detail-heading { padding: 24px 20px 19px; border-bottom: 1px solid var(--line); }
+.node-kind { display: inline-block; padding: 4px 7px; border: 1px solid rgba(93,201,193,.25); color: var(--cyan); font: 8px ui-monospace, monospace; text-transform: uppercase; letter-spacing: .15em; }
+.close-detail { float: right; border: 0; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer; }
+.detail-heading h2 { margin: 14px 0 7px; font: 500 22px/1.12 "Avenir Next Condensed", sans-serif; overflow-wrap: anywhere; }
+.detail-heading p { margin: 0; color: var(--muted); font: 9px/1.55 ui-monospace, monospace; overflow-wrap: anywhere; }
+.evidence-card { display: grid; grid-template-columns: repeat(3,1fr); margin: 15px; border: 1px solid var(--line-strong); background: rgba(15,32,27,.7); }
+.evidence-card div { padding: 11px 8px; border-right: 1px solid var(--line); }
+.evidence-card div:last-child { border: 0; }
+.evidence-card span, .evidence-card strong { display: block; text-align: center; }
+.evidence-card span { color: #5c716b; font-size: 6px; letter-spacing: .12em; }
+.evidence-card strong { margin-top: 6px; color: var(--amber); font-size: 9px; }
+.detail-section { padding: 18px 20px; border-top: 1px solid var(--line); }
+.detail-section h3 { margin: 0 0 13px; color: #61766f; font: 600 8px "Avenir Next Condensed", sans-serif; letter-spacing: .2em; }
+.detail-section dl { margin: 0; }
+.detail-section dl div { display: grid; grid-template-columns: 72px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(150,183,172,.07); }
+.detail-section dt { color: #60756e; font-size: 9px; }.detail-section dd { margin: 0; color: #becbc5; font: 9px/1.4 ui-monospace, monospace; overflow-wrap: anywhere; }
+.relation-actions { display: grid; gap: 7px; }
+.relation-actions button { display: flex; justify-content: space-between; padding: 10px 11px; border: 1px solid var(--line); background: #0b1815; color: #b8c6c0; text-align: left; cursor: pointer; font-size: 10px; }
+.relation-actions button:hover { color: #fff0c7; border-color: rgba(242,184,75,.35); background: var(--amber-soft); }
+.metadata-section { padding-bottom: 40px; }
+
+.empty-detail { padding: 42px 25px; }
+.reticle { position: relative; width: 62px; height: 62px; margin-bottom: 30px; border: 1px solid var(--line-strong); border-radius: 50%; }
+.reticle::before,.reticle::after,.reticle span::before,.reticle span::after { content:""; position:absolute; background:var(--line-strong); }
+.reticle::before { left:50%; top:-10px; bottom:-10px; width:1px; }.reticle::after { top:50%; left:-10px; right:-10px; height:1px; }
+.reticle span:first-child::before { inset: 17px; border: 1px solid rgba(242,184,75,.4); border-radius: 50%; background: transparent; }
+.empty-detail h2 { margin: 13px 0 9px; font: 500 21px "Avenir Next Condensed", sans-serif; }
+.empty-detail p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.75; }
+.empty-detail ol { margin: 34px 0 0; padding: 0; list-style: none; }
+.empty-detail li { padding: 11px 0; border-top: 1px solid var(--line); color: #95a7a0; font-size: 10px; }
+.empty-detail li span { display: inline-block; width: 35px; color: var(--amber); font: 8px ui-monospace, monospace; }
+
+.toast { position: fixed; right: 314px; bottom: 72px; z-index: 100; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; max-width: 520px; padding: 13px 15px; border: 1px solid rgba(255,128,102,.4); background: rgba(40,14,12,.96); box-shadow: 0 18px 45px rgba(0,0,0,.4); color: #f2c3ba; font-size: 10px; }
+.toast strong { color: var(--danger); letter-spacing: .12em; }.toast button { border: 0; background: transparent; color: var(--danger); cursor: pointer; }
+
+.fatal-screen { width: 100%; height: 100%; display: grid; place-content: center; max-width: 640px; margin: auto; padding: 40px; }
+.fatal-screen .eyebrow { color: var(--danger); font-size: 9px; letter-spacing: .22em; }
+.fatal-screen h1 { margin: 15px 0 10px; font: 500 42px "Avenir Next Condensed", sans-serif; }
+.fatal-screen p { color: var(--muted); line-height: 1.7; }.fatal-screen code { width: max-content; margin-top: 15px; padding: 8px 12px; border: 1px solid var(--line); color: var(--amber); }
+
+@media (max-width: 1050px) {
+  .app-shell { grid-template-columns: 210px 1fr; }
+  .topbar { grid-template-columns: 210px 1fr auto; }
+  .detail-panel { position: fixed; right: 0; top: 66px; bottom: 0; width: 294px; z-index: 30; box-shadow: -20px 0 50px rgba(0,0,0,.35); }
+  .detail-panel:has(.empty-detail) { display: none; }
+}
+
+@media (max-width: 760px) {
+  .app-shell { grid-template-columns: 1fr; grid-template-rows: 58px 1fr; }
+  .topbar { grid-template-columns: 170px 1fr; }.system-state { display: none; }.brand-block { padding: 0 12px; }.search { margin: 0 10px; }
+  .left-rail { display: none; }.map-stage { grid-column: 1; }.detail-panel { top: 58px; width: min(88vw, 320px); }
+  .map-status { grid-template-columns: repeat(2,1fr); height: 78px; }.map-stage { grid-template-rows: 66px 1fr 78px; }
+}
