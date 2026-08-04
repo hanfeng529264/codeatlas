@@ -1,8 +1,9 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createCli } from '../src/cli.js';
+import { createCli, isMainModule } from '../src/cli.js';
 
 async function runCli(args: string[]): Promise<string> {
   const output: string[] = [];
@@ -14,6 +15,16 @@ async function runCli(args: string[]): Promise<string> {
 }
 
 describe('CodeAtlas CLI', () => {
+  it('recognizes a symlinked executable as the main module', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-entry-'));
+    const target = join(root, 'cli.js');
+    const executable = join(root, 'codeatlas');
+    await writeFile(target, '#!/usr/bin/env node\n');
+    await symlink(target, executable);
+
+    expect(isMainModule(executable, pathToFileURL(target).href)).toBe(true);
+  });
+
   it('initializes the current directory without requiring CodeGraph', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
 

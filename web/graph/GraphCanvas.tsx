@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Graph from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
 import type { Attributes } from 'graphology-types';
 import type { AtlasNode, GraphProjection } from '../types';
+import { edgeIsOutsideSelection, nodeIsOutsideSelection } from './focus';
+import { NodeHoverCard } from './NodeHoverCard';
 
 interface GraphCanvasProps {
   graphData: GraphProjection;
@@ -38,6 +40,18 @@ const NODE_SIZES: Record<string, number> = {
   method: 4.5,
 };
 
+const DEFAULT_LABEL_COLOR = '#d7e1dc';
+const HIGHLIGHT_LABEL_COLOR = '#17211e';
+const INBOUND_EDGE_COLOR = '#5dc9c1';
+const OUTBOUND_EDGE_COLOR = '#f2b84b';
+const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+
+interface HoverCardState {
+  node: AtlasNode;
+  x: number;
+  y: number;
+}
+
 function hash(value: string): number {
   let output = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -68,6 +82,7 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
       y: Math.sin(angle) * radius,
       size: NODE_SIZES[node.kind] ?? 4,
       color: NODE_COLORS[node.kind] ?? '#a9b8b2',
+      labelColor: DEFAULT_LABEL_COLOR,
       kind: node.kind,
       node,
       zIndex: NODE_SIZES[node.kind] ?? 4,
@@ -78,6 +93,7 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
     graph.addDirectedEdgeWithKey(edge.id, edge.source, edge.target, {
       label: edge.kind,
       kind: edge.kind,
+      type: edge.kind === 'CONTAINS' ? 'line' : 'arrow',
       color:
         edge.evidenceClass === 'heuristic'
           ? '#806a3b'
@@ -103,6 +119,7 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
   const rendererRef = useRef<Sigma | null>(null);
   const selectedRef = useRef<string | null>(selectedId);
   const hoveredRef = useRef<string | null>(null);
+  const [hoverCard, setHoverCard] = useState<HoverCardState | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -111,14 +128,14 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
       allowInvalidContainer: false,
       defaultNodeColor: '#9cb2ab',
       defaultEdgeColor: '#314943',
-      labelColor: { color: '#d7e1dc' },
+      labelColor: { attribute: 'labelColor', color: DEFAULT_LABEL_COLOR },
       labelFont: 'Avenir Next Condensed, DIN Alternate, sans-serif',
       labelSize: 12,
       labelWeight: '500',
       labelDensity: 0.08,
       labelGridCellSize: 110,
       labelRenderedSizeThreshold: 7,
-      renderEdgeLabels: false,
+      renderEdgeLabels: true,
       hideEdgesOnMove: graph.size > 25_000,
       minCameraRatio: 0.02,
       maxCameraRatio: 8,
@@ -133,22 +150,56 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
             highlighted: true,
             size: Number(attributes.size) * 1.8,
             color: '#ffd166',
+            labelColor: HIGHLIGHT_LABEL_COLOR,
             zIndex: 100,
           };
         }
         const focus = selected ?? hovered;
-        if (focus && (graph.hasEdge(node, focus) || graph.hasEdge(focus, node))) {
-          return { ...attributes, highlighted: true, zIndex: 50 };
+        const isNeighbor = Boolean(focus && (graph.hasEdge(node, focus) || graph.hasEdge(focus, node)));
+        if (isNeighbor) {
+          return {
+            ...attributes,
+            highlighted: true,
+            labelColor: HIGHLIGHT_LABEL_COLOR,
+            zIndex: 50,
+          };
+        }
+        if (nodeIsOutsideSelection(selected, node, isNeighbor)) {
+          return { ...attributes, hidden: true, label: '', zIndex: 0 };
         }
         return { ...attributes, color: '#263632', label: '', zIndex: 0 };
       },
       edgeReducer: (edge, attributes) => {
-        const focus = selectedRef.current ?? hoveredRef.current;
-        if (!focus) return attributes;
+        const selected = selectedRef.current;
+        const focus = selected ?? hoveredRef.current;
+        if (!focus) return { ...attributes, label: '' };
         const [source, target] = graph.extremities(edge);
-        return source === focus || target === focus
-          ? { ...attributes, color: '#d89b3c', size: 2.2, zIndex: 50 }
-          : { ...attributes, color: '#182522', hidden: false, zIndex: 0 };
+        const inbound = target === focus;
+        const outbound = source === focus;
+        if (inbound || outbound) {
+          const relation = String(attributes.kind);
+          const directionEdges = inbound ? graph.inEdges(focus) : graph.outEdges(focus);
+          const labelEdge = directionEdges.find((candidate) =>
+            CALL_RELATIONS.has(String(graph.getEdgeAttribute(candidate, 'kind'))),
+          );
+          const showCallLabel = CALL_RELATIONS.has(relation) && edge === labelEdge;
+          return {
+            ...attributes,
+            type: 'arrow',
+            label: showCallLabel ? `${relation} · ${inbound ? 'IN' : 'OUT'}` : '',
+            forceLabel: showCallLabel,
+            color: inbound ? INBOUND_EDGE_COLOR : OUTBOUND_EDGE_COLOR,
+            size: selected ? 3.2 : 2.4,
+            zIndex: 100,
+          };
+        }
+        return {
+          ...attributes,
+          color: '#182522',
+          label: '',
+          hidden: edgeIsOutsideSelection(selected, source, target),
+          zIndex: 0,
+        };
       },
     });
     renderer.on('clickNode', ({ node }) => {
@@ -156,13 +207,23 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
       onSelect(attributes.node as AtlasNode);
     });
     renderer.on('clickStage', () => onSelect(null));
-    renderer.on('enterNode', ({ node }) => {
+    renderer.on('enterNode', ({ node, event }) => {
       hoveredRef.current = node;
+      const attributes = graph.getNodeAttributes(node);
+      const container = renderer.getContainer();
+      const cardWidth = 330;
+      const cardHeight = 330;
+      setHoverCard({
+        node: attributes.node as AtlasNode,
+        x: Math.max(14, Math.min(event.x + 18, container.clientWidth - cardWidth - 14)),
+        y: Math.max(14, Math.min(event.y + 18, container.clientHeight - cardHeight - 14)),
+      });
       renderer.getContainer().style.cursor = 'crosshair';
       renderer.refresh();
     });
     renderer.on('leaveNode', () => {
       hoveredRef.current = null;
+      setHoverCard(null);
       renderer.getContainer().style.cursor = 'grab';
       renderer.refresh();
     });
@@ -180,9 +241,26 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
     renderer.refresh();
     if (selectedId) {
       const data = renderer.getNodeDisplayData(selectedId);
-      if (data) void renderer.getCamera().animate({ x: data.x, y: data.y, ratio: 0.22 }, { duration: 420 });
+      const ratio = renderer.getGraph().order > 40 ? 0.48 : renderer.getGraph().order > 15 ? 0.36 : 0.28;
+      if (data) void renderer.getCamera().animate({ x: data.x, y: data.y, ratio }, { duration: 420 });
     }
   }, [selectedId]);
 
-  return <div className="graph-canvas" ref={containerRef} aria-label="Interactive workspace graph" />;
+  return (
+    <>
+      <div className="graph-canvas" ref={containerRef} aria-label="Interactive workspace graph" />
+      {hoverCard && <NodeHoverCard node={hoverCard.node} x={hoverCard.x} y={hoverCard.y} />}
+      <div className={`graph-direction-key${selectedId ? ' is-active' : ''}`} aria-label="关系方向图例">
+        {selectedId ? (
+          <>
+            <span className="direction-in"><i>→</i> 进入当前节点 <small>IN</small></span>
+            <span className="direction-out"><i>→</i> 从当前节点发出 <small>OUT</small></span>
+            <span className="direction-isolated">背景节点与关系已隐藏 <small>FOCUS</small></span>
+          </>
+        ) : (
+          <span><i>→</i> 箭头指向关系目标</span>
+        )}
+      </div>
+    </>
+  );
 }

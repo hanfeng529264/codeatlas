@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -179,7 +180,17 @@ export async function main(argv = process.argv): Promise<void> {
   await createCli().parseAsync(argv);
 }
 
-if (resolve(process.argv[1] ?? '') === resolve(fileURLToPath(import.meta.url))) {
+export function isMainModule(argvEntry: string | undefined, moduleUrl = import.meta.url): boolean {
+  if (!argvEntry) return false;
+  const modulePath = fileURLToPath(moduleUrl);
+  try {
+    return realpathSync(argvEntry) === realpathSync(modulePath);
+  } catch {
+    return resolve(argvEntry) === resolve(modulePath);
+  }
+}
+
+if (isMainModule(process.argv[1])) {
   main().catch((error) => {
     defaultIO.stderr(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
