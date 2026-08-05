@@ -7,5 +7,6 @@
 | [0003](0003-codegraph-adapter.md) | Accepted | 通过适配器集成 CodeGraph |
 | [0004](0004-sqlite-over-graph-database.md) | Accepted | MVP 使用 SQLite 而非独立图数据库 |
 | [0005](0005-full-graph-progressive-rendering.md) | Accepted | 完整图采用 WebGL 与分级渲染 |
+| [0006](0006-project-index-aggregation.md) | Accepted | 聚合每个项目的独立 CodeGraph 索引 |
 
 ADR 记录已确认且会影响长期维护成本的架构决策。发生方向变化时新增 ADR 并标记旧决策为 Superseded，不直接改写历史原因。
