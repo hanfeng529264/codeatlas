@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
@@ -33,8 +33,42 @@ describe('CodeAtlas CLI', () => {
     expect(output).toContain('Workspace initialized');
     expect(JSON.parse(await readFile(join(root, '.codeatlas', 'workspace.json'), 'utf8'))).toMatchObject({
       root: '.',
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
+  });
+
+  it('initializes an empty multi-project workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
+
+    const output = await runCli(['init', root, '--empty']);
+    const config = JSON.parse(await readFile(join(root, '.codeatlas', 'workspace.json'), 'utf8'));
+
+    expect(output).toContain('Empty multi-project workspace ready');
+    expect(config.projects).toEqual([]);
+  });
+
+  it('adds, lists, and removes workspace projects without indexing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
+    const projectRoot = join(root, 'services', 'catalog');
+    await mkdir(projectRoot, { recursive: true });
+    await runCli(['init', root, '--empty']);
+
+    const added = await runCli([
+      'project', 'add', projectRoot,
+      '--workspace', root,
+      '--name', 'Catalog API',
+      '--skip-codegraph',
+    ]);
+    const listed = JSON.parse(await runCli(['project', 'list', root, '--json']));
+
+    expect(added).toContain('Project added: Catalog API (catalog-api)');
+    expect(listed.projects).toEqual([
+      { id: 'catalog-api', name: 'Catalog API', path: 'services/catalog' },
+    ]);
+
+    const removed = await runCli(['project', 'remove', 'catalog-api', '--workspace', root]);
+    expect(removed).toContain('Project removed: Catalog API (catalog-api)');
+    expect(JSON.parse(await runCli(['project', 'list', root, '--json'])).projects).toEqual([]);
   });
 
   it('prints machine-readable status from a nested or explicit path', async () => {

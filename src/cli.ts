@@ -7,7 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { Command } from 'commander';
 import { inspectCodeGraph, loadCodeGraphSnapshot } from './adapters/codegraph.js';
-import { initWorkspace, loadWorkspace } from './core/workspace.js';
+import {
+  addWorkspaceProject,
+  initWorkspace,
+  loadWorkspace,
+  removeWorkspaceProject,
+  resolveProjectRoot,
+} from './core/workspace.js';
 import { buildServer } from './server/app.js';
 
 const execFileAsync = promisify(execFile);
@@ -44,8 +50,21 @@ function openBrowser(url: string): void {
 
 async function statusFor(inputPath?: string) {
   const workspace = await loadWorkspace(inputPath);
-  const codegraph = await inspectCodeGraph(workspace.rootPath);
-  const graph = codegraph.initialized && codegraph.compatible
+  const projectStatuses = await Promise.all(
+    workspace.config.projects.map(async (project) => ({
+      project,
+      status: await inspectCodeGraph(resolveProjectRoot(workspace, project)),
+    })),
+  );
+  const firstStatus = projectStatuses[0]?.status;
+  const codegraph = {
+    available: projectStatuses.length === 0 ? await inspectCodeGraph(workspace.rootPath).then((status) => status.available) : projectStatuses.every(({ status }) => status.available),
+    initialized: projectStatuses.length > 0 && projectStatuses.every(({ status }) => status.initialized),
+    compatible: projectStatuses.every(({ status }) => status.compatible),
+    version: firstStatus?.version,
+    projects: projectStatuses.map(({ project, status }) => ({ ...project, ...status })),
+  };
+  const graph = projectStatuses.some(({ status }) => status.initialized && status.compatible)
     ? await loadCodeGraphSnapshot(workspace).then((snapshot) => ({
         version: snapshot.version,
         nodes: snapshot.counts.totalNodes,
@@ -81,13 +100,18 @@ export function createCli(io: CliIO = defaultIO): Command {
     .description('Initialize a CodeAtlas workspace and its CodeGraph index')
     .argument('[path]', 'workspace path', process.cwd())
     .option('--skip-codegraph', 'create only the CodeAtlas workspace')
-    .action(async (inputPath: string, flags: { skipCodegraph?: boolean }) => {
-      const workspace = await initWorkspace(inputPath);
+    .option('--empty', 'create an empty multi-project workspace')
+    .action(async (inputPath: string, flags: { skipCodegraph?: boolean; empty?: boolean }) => {
+      const workspace = await initWorkspace(inputPath, { empty: flags.empty });
       io.stdout(
         workspace.created
           ? `Workspace initialized: ${workspace.rootPath}`
           : `Workspace already exists: ${workspace.rootPath}`,
       );
+      if (flags.empty) {
+        io.stdout('Empty multi-project workspace ready. Add projects with "codeatlas project add".');
+        return;
+      }
       if (flags.skipCodegraph) {
         io.stdout('CodeGraph initialization skipped.');
         return;
@@ -105,6 +129,74 @@ export function createCli(io: CliIO = defaultIO): Command {
       }
     });
 
+  const project = program
+    .command('project')
+    .description('Manage projects in a CodeAtlas workspace');
+
+  project
+    .command('add')
+    .description('Add a project to the workspace')
+    .argument('<project-path>', 'project directory')
+    .option('-w, --workspace <path>', 'workspace path', process.cwd())
+    .option('-n, --name <name>', 'project display name')
+    .option('--skip-codegraph', 'register the project without initializing CodeGraph')
+    .action(async (
+      projectPath: string,
+      flags: { workspace: string; name?: string; skipCodegraph?: boolean },
+    ) => {
+      const added = await addWorkspaceProject(flags.workspace, projectPath, { name: flags.name });
+      io.stdout(`Project added: ${added.project.name} (${added.project.id})`);
+      if (flags.skipCodegraph) {
+        io.stdout('CodeGraph initialization skipped.');
+        return;
+      }
+      const projectRoot = resolveProjectRoot(added.workspace, added.project);
+      const status = await inspectCodeGraph(projectRoot);
+      if (!status.available) {
+        io.stderr('CodeGraph is not installed. The project is registered but not indexed.');
+        return;
+      }
+      if (!status.initialized) {
+        io.stdout(`Building the CodeGraph index for ${added.project.name}…`);
+        await runCodeGraph(['init', projectRoot], io);
+      } else {
+        io.stdout(`CodeGraph index ready for ${added.project.name}${status.version ? ` (v${status.version})` : ''}.`);
+      }
+    });
+
+  project
+    .command('list')
+    .description('List projects in the workspace')
+    .argument('[path]', 'workspace path')
+    .option('--json', 'print machine-readable JSON')
+    .action(async (inputPath: string | undefined, flags: { json?: boolean }) => {
+      const workspace = await loadWorkspace(inputPath);
+      if (flags.json) {
+        io.stdout(JSON.stringify({
+          workspace: { id: workspace.config.id, name: workspace.config.name, rootPath: workspace.rootPath },
+          projects: workspace.config.projects,
+        }));
+        return;
+      }
+      if (workspace.config.projects.length === 0) {
+        io.stdout('No projects registered.');
+        return;
+      }
+      for (const entry of workspace.config.projects) {
+        io.stdout(`${entry.id}\t${entry.name}\t${entry.path}`);
+      }
+    });
+
+  project
+    .command('remove')
+    .description('Remove a project from the workspace without deleting its files')
+    .argument('<project>', 'project id or exact name')
+    .option('-w, --workspace <path>', 'workspace path', process.cwd())
+    .action(async (input: string, flags: { workspace: string }) => {
+      const removed = await removeWorkspaceProject(flags.workspace, input);
+      io.stdout(`Project removed: ${removed.project.name} (${removed.project.id})`);
+    });
+
   program
     .command('status')
     .description('Show workspace and graph health')
@@ -118,7 +210,9 @@ export function createCli(io: CliIO = defaultIO): Command {
       }
       io.stdout(`Workspace  ${status.workspace.name}`);
       io.stdout(`Root       ${status.workspace.rootPath}`);
-      io.stdout(`CodeGraph  ${status.codegraph.initialized ? 'indexed' : 'not indexed'}${status.codegraph.version ? ` · v${status.codegraph.version}` : ''}`);
+      const indexedProjects = status.codegraph.projects.filter((project) => project.initialized).length;
+      io.stdout(`Projects   ${status.workspace.projects.length} · ${indexedProjects} indexed`);
+      io.stdout(`CodeGraph  ${status.codegraph.initialized ? 'all indexed' : 'partial or not indexed'}${status.codegraph.version ? ` · v${status.codegraph.version}` : ''}`);
       io.stdout(`Graph      ${status.graph ? `${status.graph.nodes.toLocaleString()} nodes · ${status.graph.edges.toLocaleString()} edges` : 'unavailable'}`);
     });
 
@@ -128,11 +222,18 @@ export function createCli(io: CliIO = defaultIO): Command {
     .argument('[path]', 'workspace path')
     .action(async (inputPath?: string) => {
       const workspace = await loadWorkspace(inputPath);
-      const status = await inspectCodeGraph(workspace.rootPath);
-      if (!status.available || !status.initialized) {
-        throw new Error('CodeGraph is not ready. Run "codeatlas init" first.');
+      if (workspace.config.projects.length === 0) {
+        throw new Error('No projects are registered. Run "codeatlas project add" first.');
       }
-      await runCodeGraph(['sync', workspace.rootPath], io);
+      for (const projectEntry of workspace.config.projects) {
+        const projectRoot = resolveProjectRoot(workspace, projectEntry);
+        const status = await inspectCodeGraph(projectRoot);
+        if (!status.available || !status.initialized) {
+          throw new Error(`CodeGraph is not ready for ${projectEntry.name}. Initialize that project first.`);
+        }
+        await runCodeGraph(['sync', projectRoot], io);
+        io.stdout(`Synchronized ${projectEntry.name}.`);
+      }
       io.stdout('Workspace graph synchronized.');
     });
 
