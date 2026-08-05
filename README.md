@@ -2,14 +2,14 @@
 
 > 面向开发者的本地代码图谱浏览器：将代码结构与调用关系转换为可搜索、可聚焦、可验证的交互式图谱。
 
-**当前版本：`v0.2.0` · 发布阶段：Beta / pre-release · 更新日期：2026-08-05**
+**当前版本：`v0.3.0` · 发布阶段：Beta / pre-release · 更新日期：2026-08-05**
 
 CodeAtlas 基于 [CodeGraph](https://github.com/colbymchenry/codegraph) 生成的静态分析结果，为代码仓库提供完整空间图、目录层级图、代码结构图、方法图和调用图。它适合用来理解陌生项目、追踪上下游调用、核对关系来源，以及从复杂代码库中快速找到切入点。
 
 CodeAtlas 默认在本机运行。源代码、索引数据库和图谱数据不会因为使用 CodeAtlas 而自动上传到远程服务。
 
 > [!IMPORTANT]
-> 当前版本为 `0.2.0` Beta，支持在一个工作空间中聚合多个项目、切换项目范围并展示明确的包依赖关系。MCP、知识标注、数据库关系图和完整数据流分析仍在规划中。
+> 当前版本为 `0.3.0` Beta，新增 Java/Spring/MyBatis 表级数据链路，以及基于 Maven 契约证据的 Java 跨项目调用。MCP、知识标注、更多语言 Provider、字段级数据流和运行时 Trace 仍在规划中。
 
 ![CodeAtlas 调用关系聚焦视图](docs/assets/codeatlas-mvp.png)
 
@@ -17,7 +17,7 @@ CodeAtlas 默认在本机运行。源代码、索引数据库和图谱数据不�
 
 | 项目 | 版本或状态 |
 |---|---|
-| CodeAtlas | `0.2.0` |
+| CodeAtlas | `0.3.0` |
 | 发布阶段 | Beta / pre-release |
 | 工作空间配置 Schema | `2`（自动迁移 Schema 1） |
 | Node.js | `>= 22.5.0` |

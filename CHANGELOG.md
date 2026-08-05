@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### Planned
+
+- 保存视角、链路和人工知识标注。
+- 面向 AI 客户端的 CodeAtlas MCP 服务。
+- Schema、字段级静态数据流和运行时 Trace 数据源。
+
+## [0.3.0] - 2026-08-05
+
+表级数据链路与 Java 跨项目契约调用版本。
+
 ### Added
 
 - Java/MyBatis 表级数据链路，包括 XML SQL、MyBatis-Plus 实体映射和 `READS_FROM`、`WRITES_TO`、`MAPS_TO`。
@@ -18,12 +28,6 @@
 - 首个数据流 Provider 覆盖 Java/Spring/MyBatis；其他语言和 ORM 尚待接入。
 - 跨项目方法桥接首个 Provider 覆盖 Java/Maven；候选不唯一或类型无法静态还原时会跳过并给出诊断。
 - 当前为表级静态链路，不包含字段级污点传播和运行时 Trace。
-
-### Planned
-
-- 保存视角、链路和人工知识标注。
-- 面向 AI 客户端的 CodeAtlas MCP 服务。
-- Schema、字段级静态数据流和运行时 Trace 数据源。
 
 ## [0.2.0] - 2026-08-05
 
