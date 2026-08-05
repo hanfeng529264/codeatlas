@@ -45,6 +45,45 @@ await writeFile(
 await writeFile(join(apiRoot, 'package.json'), `${JSON.stringify({ name: '@codeatlas/api' })}\n`);
 
 const snapshot = await loadCodeGraphSnapshot(apiProject.workspace);
+const dataTableId = 'table:api:audit_log';
+snapshot.nodes.push({
+  id: dataTableId,
+  kind: 'table',
+  label: 'audit_log',
+  qualifiedName: 'audit_log',
+  projectId: 'api',
+  source: 'java-mybatis',
+  evidenceClass: 'static-derived',
+  confidence: 1,
+  metadata: { providerId: 'java-mybatis', tableName: 'audit_log' },
+});
+snapshot.edges.push({
+  id: 'e2e-data-read',
+  source: 'symbol:api:n-session',
+  target: dataTableId,
+  kind: 'READS_FROM',
+  sourceName: 'java-mybatis',
+  evidenceClass: 'static-derived',
+  confidence: 1,
+  metadata: {
+    providerId: 'java-mybatis',
+    operation: 'select',
+    sourceFile: 'src/session.ts',
+  },
+});
+snapshot.diagnostics.push({
+  providerId: 'java-mybatis',
+  projectId: 'api',
+  severity: 'warning',
+  code: 'e2e-dynamic-table',
+  message: 'One dynamic table expression could not be resolved.',
+  filePath: 'src/session.ts',
+});
+snapshot.counts.totalNodes = snapshot.nodes.length;
+snapshot.counts.returnedNodes = snapshot.nodes.length;
+snapshot.counts.totalEdges = snapshot.edges.length;
+snapshot.counts.returnedEdges = snapshot.edges.length;
+snapshot.version += ':e2e-data';
 const app = await buildServer({
   workspace: { ...workspace, config: apiProject.workspace.config },
   snapshot,

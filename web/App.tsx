@@ -9,7 +9,10 @@ const VIEWS: Array<{ id: ViewId; code: string; label: string; caption: string }>
   { id: 'structure', code: '02', label: '代码结构', caption: 'SYMBOLS' },
   { id: 'methods', code: '03', label: '方法图', caption: 'METHODS' },
   { id: 'calls', code: '04', label: '调用图', caption: 'CALL FLOW' },
+  { id: 'data', code: '05', label: '数据链路', caption: 'DATA FLOW' },
 ];
+
+const DATA_RELATIONS = new Set(['READS_FROM', 'WRITES_TO', 'MAPS_TO', 'CALLS_API', 'PUBLISHES_TO', 'SUBSCRIBES_TO']);
 
 const EVIDENCE_LABELS: Record<string, string> = {
   verified: '已验证',
@@ -129,6 +132,35 @@ export default function App() {
     for (const node of graph?.nodes ?? []) counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [graph]);
+
+  const dataStats = useMemo(() => {
+    const edgeCounts = new Map<string, number>();
+    for (const edge of graph?.edges ?? []) edgeCounts.set(edge.kind, (edgeCounts.get(edge.kind) ?? 0) + 1);
+    return {
+      tables: graph?.nodes.filter((node) => node.kind === 'table').length ?? 0,
+      reads: edgeCounts.get('READS_FROM') ?? 0,
+      writes: edgeCounts.get('WRITES_TO') ?? 0,
+      mappings: edgeCounts.get('MAPS_TO') ?? 0,
+    };
+  }, [graph]);
+
+  const visibleDiagnostics = useMemo(() => {
+    const diagnostics = status?.graph.diagnostics ?? [];
+    if (selectedProjectId === 'all') return diagnostics;
+    return diagnostics.filter((diagnostic) => diagnostic.projectId === selectedProjectId);
+  }, [selectedProjectId, status]);
+
+  const selectedDataRelations = useMemo(() => {
+    if (!selected || !graph) return [];
+    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+    return graph.edges
+      .filter((edge) => DATA_RELATIONS.has(edge.kind) && (edge.source === selected.id || edge.target === selected.id))
+      .map((edge) => ({
+        edge,
+        direction: edge.source === selected.id ? 'out' : 'in',
+        other: nodesById.get(edge.source === selected.id ? edge.target : edge.source),
+      }));
+  }, [graph, selected]);
 
   if (error && !graph) {
     return (
@@ -256,6 +288,22 @@ export default function App() {
             <p className="scope-caption">{selectedProject ? `${selectedProject.name} PROJECT` : 'ALL PROJECTS'}</p>
           </div>
           <div className="stage-actions">
+            {!focused && view === 'data' && (
+              <div className="data-flow-summary" aria-label="Data flow summary">
+                <span><small>TABLES</small><b>{dataStats.tables.toLocaleString()}</b></span>
+                <span><small>READS</small><b>{dataStats.reads.toLocaleString()}</b></span>
+                <span><small>WRITES</small><b>{dataStats.writes.toLocaleString()}</b></span>
+                <span><small>MAPS</small><b>{dataStats.mappings.toLocaleString()}</b></span>
+              </div>
+            )}
+            {!focused && view === 'data' && visibleDiagnostics.length > 0 && (
+              <span
+                className="diagnostic-badge"
+                title={visibleDiagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join('\n')}
+              >
+                {visibleDiagnostics.length} {visibleDiagnostics.length === 1 ? 'DIAGNOSTIC' : 'DIAGNOSTICS'}
+              </span>
+            )}
             {focused && <button type="button" onClick={() => void loadView(view)}>← 返回完整空间</button>}
             {!focused && graph?.projection.overview && (
               <button type="button" className="render-all" onClick={() => void loadView(view, selectedProjectId, true)}>
@@ -271,7 +319,14 @@ export default function App() {
         <div className="map-frame">
           <div className="coordinate coordinate-nw">N 31°14′ / E 121°29′</div>
           <div className="coordinate coordinate-se">GRAPH/{graph?.version.slice(0, 8) ?? '--------'}</div>
-          {graph && <GraphCanvas graphData={graph} selectedId={selected?.id ?? null} onSelect={setSelected} />}
+          {graph && <GraphCanvas graphData={graph} view={view} selectedId={selected?.id ?? null} onSelect={setSelected} />}
+          {!loading && view === 'data' && graph?.nodes.length === 0 && (
+            <div className="empty-graph-state">
+              <span>NO DATA ROUTE</span>
+              <h2>当前范围没有数据链路</h2>
+              <p>未发现能够到达表或其他数据资源的静态关系。可以切换项目，或检查 Provider 诊断。</p>
+            </div>
+          )}
           {loading && <div className="loading-plate"><span /><b>RECALCULATING PROJECTION</b></div>}
           <div className="scale-mark"><span>0</span><i /><span>RELATION DEPTH</span></div>
         </div>
@@ -324,6 +379,24 @@ export default function App() {
               </div>
             </section>
 
+            {selectedDataRelations.length > 0 && (
+              <section className="detail-section data-relations-section">
+                <h3>DATA RELATIONS</h3>
+                <div className="data-relation-list">
+                  {selectedDataRelations.map(({ edge, direction, other }) => (
+                    <div className={`data-relation-row relation-${edge.kind.toLocaleLowerCase()}`} key={edge.id}>
+                      <div>
+                        <b>{edge.kind}</b>
+                        <small>{direction === 'out' ? 'OUT →' : '← IN'}</small>
+                      </div>
+                      <strong>{other?.label ?? (direction === 'out' ? edge.target : edge.source)}</strong>
+                      <em>{edge.sourceName}{typeof edge.metadata.operation === 'string' ? ` · ${edge.metadata.operation}` : ''}</em>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section className="detail-section metadata-section">
               <h3>ATTRIBUTES</h3>
               <dl>
@@ -338,7 +411,9 @@ export default function App() {
             <div className="reticle"><span /><span /></div>
             <span className="rail-label">INSPECTOR</span>
             <h2>选择一个节点</h2>
-            <p>点击图中的任意项目、目录、文件或方法，查看它的证据、位置与上下游关系。</p>
+            <p>{view === 'data'
+              ? '选择方法、Mapper、SQL 或表节点，验证读取、写入方向与 Provider 证据。'
+              : '点击图中的任意项目、目录、文件或方法，查看它的证据、位置与上下游关系。'}</p>
             <ol>
               <li><span>01</span>选择切入点</li>
               <li><span>02</span>验证关系来源</li>
