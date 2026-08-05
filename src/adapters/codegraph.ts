@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
@@ -10,7 +10,9 @@ import type {
   GraphNode,
   GraphSnapshot,
   Workspace,
+  WorkspaceProject,
 } from '../core/types.js';
+import { resolveProjectRoot } from '../core/workspace.js';
 
 const execFileAsync = promisify(execFile);
 const REQUIRED_TABLES = ['edges', 'files', 'nodes'] as const;
@@ -57,6 +59,14 @@ interface EdgeRow {
   line: number | null;
   col: number | null;
   provenance?: string | null;
+}
+
+interface ProjectGraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  version: string;
+  totalNodes: number;
+  totalEdges: number;
 }
 
 function normalizePath(value: string): string {
@@ -193,17 +203,18 @@ function relationKind(kind: string): string {
 
 function addDirectoryChain(
   filePath: string,
-  projectId: string,
+  project: WorkspaceProject,
   nodeMap: Map<string, GraphNode>,
   edges: GraphEdge[],
 ): string {
   const directoryPath = posix.dirname(filePath);
-  if (directoryPath === '.') return projectId;
-  let parentId = projectId;
+  const projectNodeId = `project:${project.id}`;
+  if (directoryPath === '.') return projectNodeId;
+  let parentId = projectNodeId;
   let currentPath = '';
   for (const segment of directoryPath.split('/')) {
     currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-    const directoryId = `directory:${currentPath}`;
+    const directoryId = `directory:${project.id}:${currentPath}`;
     if (!nodeMap.has(directoryId)) {
       nodeMap.set(
         directoryId,
@@ -212,7 +223,7 @@ function addDirectoryChain(
           kind: 'directory',
           label: segment,
           filePath: currentPath,
-          projectId: 'root',
+          projectId: project.id,
         }),
       );
       edges.push(containsEdge(parentId, directoryId));
@@ -222,19 +233,12 @@ function addDirectoryChain(
   return parentId;
 }
 
-export async function loadCodeGraphSnapshot(
-  workspace: Workspace,
-  options: LoadOptions = {},
-): Promise<GraphSnapshot> {
-  const status = await inspectCodeGraph(workspace.rootPath);
-  if (!status.initialized) {
-    throw new Error('CodeGraph index not found. Run "codegraph init" in the workspace first.');
-  }
-  if (!status.compatible) {
-    throw new Error(status.message ?? 'CodeGraph database is incompatible.');
-  }
-
-  const db = new DatabaseSync(status.databasePath, { readOnly: true });
+async function loadProjectGraph(
+  projectRoot: string,
+  project: WorkspaceProject,
+  databasePath: string,
+): Promise<ProjectGraphData> {
+  const db = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const fileRows = db.prepare(`
       SELECT path, language, size, modified_at, indexed_at, node_count, errors
@@ -261,27 +265,10 @@ export async function loadCodeGraphSnapshot(
 
     const nodeMap = new Map<string, GraphNode>();
     const allEdges: GraphEdge[] = [];
-    const workspaceId = `workspace:${workspace.config.id}`;
-    const projectId = 'project:root';
-    nodeMap.set(
-      workspaceId,
-      graphNode({ id: workspaceId, kind: 'workspace', label: workspace.config.name }),
-    );
-    nodeMap.set(
-      projectId,
-      graphNode({
-        id: projectId,
-        kind: 'project',
-        label: workspace.config.projects[0]?.name ?? workspace.config.name,
-        projectId: 'root',
-      }),
-    );
-    allEdges.push(containsEdge(workspaceId, projectId));
-
     for (const file of fileRows) {
       const filePath = normalizePath(file.path);
-      const parentId = addDirectoryChain(filePath, projectId, nodeMap, allEdges);
-      const fileId = `file:${filePath}`;
+      const parentId = addDirectoryChain(filePath, project, nodeMap, allEdges);
+      const fileId = `file:${project.id}:${filePath}`;
       nodeMap.set(
         fileId,
         graphNode({
@@ -289,7 +276,7 @@ export async function loadCodeGraphSnapshot(
           kind: 'file',
           label: posix.basename(filePath),
           filePath,
-          projectId: 'root',
+          projectId: project.id,
           language: file.language,
           source: 'codegraph',
           evidenceClass: 'static-derived',
@@ -310,10 +297,10 @@ export async function loadCodeGraphSnapshot(
     for (const node of nodeRows) {
       const filePath = normalizePath(node.file_path);
       if (node.kind === 'file') {
-        rawNodeIds.set(node.id, `file:${filePath}`);
+        rawNodeIds.set(node.id, `file:${project.id}:${filePath}`);
         continue;
       }
-      const id = `symbol:${node.id}`;
+      const id = `symbol:${project.id}:${node.id}`;
       rawNodeIds.set(node.id, id);
       nodeMap.set(
         id,
@@ -323,7 +310,7 @@ export async function loadCodeGraphSnapshot(
           label: node.name,
           qualifiedName: node.qualified_name,
           filePath,
-          projectId: 'root',
+          projectId: project.id,
           language: node.language,
           startLine: node.start_line,
           endLine: node.end_line,
@@ -341,15 +328,15 @@ export async function loadCodeGraphSnapshot(
           },
         }),
       );
-      allEdges.push(containsEdge(`file:${filePath}`, id));
+      allEdges.push(containsEdge(`file:${project.id}:${filePath}`, id));
     }
 
     for (const edge of edgeRows) {
-      const source = rawNodeIds.get(edge.source) ?? `symbol:${edge.source}`;
-      const target = rawNodeIds.get(edge.target) ?? `symbol:${edge.target}`;
+      const source = rawNodeIds.get(edge.source) ?? `symbol:${project.id}:${edge.source}`;
+      const target = rawNodeIds.get(edge.target) ?? `symbol:${project.id}:${edge.target}`;
       if (!nodeMap.has(source) || !nodeMap.has(target)) continue;
       allEdges.push({
-        id: `codegraph-edge:${edge.id}`,
+        id: `codegraph-edge:${project.id}:${edge.id}`,
         source,
         target,
         kind: relationKind(edge.kind),
@@ -361,6 +348,7 @@ export async function loadCodeGraphSnapshot(
           line: edge.line,
           column: edge.col,
           provenance: edge.provenance,
+          projectRoot,
         },
       });
     }
@@ -371,36 +359,187 @@ export async function loadCodeGraphSnapshot(
     }
     const normalizedEdges = [...uniqueEdges.values()];
     const allNodes = [...nodeMap.values()];
-    const maxNodes = Math.max(1, options.maxNodes ?? 250_000);
-    const maxEdges = Math.max(0, options.maxEdges ?? 1_000_000);
-    const nodes = allNodes.slice(0, maxNodes);
-    const returnedIds = new Set(nodes.map((node) => node.id));
-    const eligibleEdges = normalizedEdges.filter(
-      (edge) => returnedIds.has(edge.source) && returnedIds.has(edge.target),
-    );
-    const edges = eligibleEdges.slice(0, maxEdges);
-    const truncated = nodes.length < allNodes.length || edges.length < eligibleEdges.length;
     const latestIndex = Math.max(0, ...fileRows.map((file) => file.indexed_at));
-
     return {
-      version: `${workspace.config.id}:${fileRows.length}:${nodeRows.length}:${edgeRows.length}:${latestIndex}`,
-      generatedAt: new Date().toISOString(),
-      nodes,
-      edges,
-      counts: {
-        totalNodes: allNodes.length,
-        totalEdges: normalizedEdges.length,
-        returnedNodes: nodes.length,
-        returnedEdges: edges.length,
-      },
-      truncated,
-      truncationReason: truncated
-        ? nodes.length < allNodes.length
-          ? `Result exceeded the ${maxNodes.toLocaleString()} node budget.`
-          : `Result exceeded the ${maxEdges.toLocaleString()} edge budget.`
-        : undefined,
+      nodes: allNodes,
+      edges: normalizedEdges,
+      version: `${project.id}:${fileRows.length}:${nodeRows.length}:${edgeRows.length}:${latestIndex}`,
+      totalNodes: allNodes.length,
+      totalEdges: normalizedEdges.length,
     };
   } finally {
     db.close();
   }
+}
+
+interface PackageManifestProject {
+  project: WorkspaceProject;
+  packageName?: string;
+  dependencies: Record<string, string>;
+}
+
+async function readPackageManifest(
+  workspace: Workspace,
+  project: WorkspaceProject,
+): Promise<PackageManifestProject> {
+  const dependencies: Record<string, string> = {};
+  try {
+    const raw = await readFile(join(resolveProjectRoot(workspace, project), 'package.json'), 'utf8');
+    const manifest = JSON.parse(raw) as Record<string, unknown>;
+    for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+      const section = manifest[key];
+      if (!section || typeof section !== 'object' || Array.isArray(section)) continue;
+      for (const [name, value] of Object.entries(section)) {
+        if (typeof value === 'string') dependencies[name] = value;
+      }
+    }
+    return {
+      project,
+      packageName: typeof manifest.name === 'string' ? manifest.name : undefined,
+      dependencies,
+    };
+  } catch {
+    return { project, dependencies };
+  }
+}
+
+async function packageDependencyEdges(workspace: Workspace): Promise<GraphEdge[]> {
+  const manifests = await Promise.all(
+    workspace.config.projects.map((project) => readPackageManifest(workspace, project)),
+  );
+  const projectsByPackage = new Map(
+    manifests
+      .filter((entry): entry is PackageManifestProject & { packageName: string } => Boolean(entry.packageName))
+      .map((entry) => [entry.packageName, entry.project]),
+  );
+  const edges: GraphEdge[] = [];
+  for (const manifest of manifests) {
+    for (const [dependency, specifier] of Object.entries(manifest.dependencies)) {
+      const target = projectsByPackage.get(dependency);
+      if (!target || target.id === manifest.project.id) continue;
+      edges.push({
+        id: `package-dependency:${manifest.project.id}:${target.id}:${dependency}`,
+        source: `project:${manifest.project.id}`,
+        target: `project:${target.id}`,
+        kind: 'DEPENDS_ON',
+        sourceName: 'package.json',
+        evidenceClass: 'static-derived',
+        confidence: 1,
+        metadata: { dependency, specifier, manifest: `${manifest.project.path}/package.json` },
+      });
+    }
+  }
+  return edges;
+}
+
+export async function loadCodeGraphSnapshot(
+  workspace: Workspace,
+  options: LoadOptions = {},
+): Promise<GraphSnapshot> {
+  if (workspace.config.projects.length === 0) {
+    throw new Error('No projects are registered. Run "codeatlas project add" first.');
+  }
+
+  const workspaceId = `workspace:${workspace.config.id}`;
+  const baseNodes: GraphNode[] = [
+    graphNode({ id: workspaceId, kind: 'workspace', label: workspace.config.name }),
+  ];
+  const allEdges: GraphEdge[] = [];
+  const projectResults: Array<{
+    project: WorkspaceProject;
+    status: CodeGraphStatus;
+    data?: ProjectGraphData;
+  }> = [];
+
+  for (const project of workspace.config.projects) {
+    const projectRoot = resolveProjectRoot(workspace, project);
+    let status = await inspectCodeGraph(projectRoot);
+    let data: ProjectGraphData | undefined;
+    if (status.initialized && status.compatible) {
+      try {
+        data = await loadProjectGraph(projectRoot, project, status.databasePath);
+      } catch (error) {
+        status = {
+          ...status,
+          compatible: false,
+          message: `CodeGraph project index could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+    const projectNodeId = `project:${project.id}`;
+    baseNodes.push(
+      graphNode({
+        id: projectNodeId,
+        kind: 'project',
+        label: project.name,
+        projectId: project.id,
+        metadata: {
+          path: project.path,
+          indexed: status.initialized,
+          compatible: status.compatible,
+          message: status.message,
+        },
+      }),
+    );
+    allEdges.push(containsEdge(workspaceId, projectNodeId));
+    if (data) {
+      for (const node of data.nodes) baseNodes.push(node);
+      for (const edge of data.edges) allEdges.push(edge);
+    }
+    projectResults.push({ project, status, data });
+  }
+
+  if (!projectResults.some((result) => result.data)) {
+    throw new Error('No compatible CodeGraph project index is available. Initialize at least one project first.');
+  }
+
+  for (const edge of await packageDependencyEdges(workspace)) allEdges.push(edge);
+  const uniqueEdges = new Map<string, GraphEdge>();
+  for (const edge of allEdges) {
+    uniqueEdges.set(`${edge.source}\u0000${edge.target}\u0000${edge.kind}`, edge);
+  }
+  const normalizedEdges = [...uniqueEdges.values()];
+  const maxNodes = Math.max(1, options.maxNodes ?? 250_000);
+  const maxEdges = Math.max(0, options.maxEdges ?? 1_000_000);
+  const nodes = baseNodes.slice(0, maxNodes);
+  const returnedIds = new Set(nodes.map((node) => node.id));
+  const eligibleEdges = normalizedEdges.filter(
+    (edge) => returnedIds.has(edge.source) && returnedIds.has(edge.target),
+  );
+  const edges = eligibleEdges.slice(0, maxEdges);
+  const unavailableProjects = projectResults.filter((result) => !result.data);
+  const budgetReason = nodes.length < baseNodes.length
+    ? `Result exceeded the ${maxNodes.toLocaleString()} node budget.`
+    : edges.length < eligibleEdges.length
+      ? `Result exceeded the ${maxEdges.toLocaleString()} edge budget.`
+      : undefined;
+  const unavailableReason = unavailableProjects.length > 0
+    ? `Unavailable project indexes: ${unavailableProjects.map(({ project }) => project.name).join(', ')}.`
+    : undefined;
+  const truncationReason = [unavailableReason, budgetReason].filter(Boolean).join(' ');
+
+  return {
+    version: `${workspace.config.id}:${projectResults.map(({ data, project }) => data?.version ?? `${project.id}:missing`).join('|')}`,
+    generatedAt: new Date().toISOString(),
+    nodes,
+    edges,
+    counts: {
+      totalNodes: baseNodes.length,
+      totalEdges: normalizedEdges.length,
+      returnedNodes: nodes.length,
+      returnedEdges: edges.length,
+    },
+    projects: projectResults.map(({ project, status, data }) => ({
+      ...project,
+      indexed: status.initialized,
+      compatible: status.compatible,
+      available: status.available,
+      version: status.version,
+      message: status.message,
+      totalNodes: data?.totalNodes ?? 0,
+      totalEdges: data?.totalEdges ?? 0,
+    })),
+    truncated: Boolean(truncationReason),
+    truncationReason: truncationReason || undefined,
+  };
 }

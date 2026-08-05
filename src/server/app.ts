@@ -3,7 +3,6 @@ import fastifyStatic from '@fastify/static';
 import { access } from 'node:fs/promises';
 import { z } from 'zod';
 import type { GraphSnapshot, Workspace } from '../core/types.js';
-import { inspectCodeGraph } from '../adapters/codegraph.js';
 import { GraphStore, type GraphDirection, type GraphView } from './graph-store.js';
 
 interface BuildServerOptions {
@@ -51,7 +50,14 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   });
 
   app.get('/api/status', async () => {
-    const codegraph = await inspectCodeGraph(options.workspace.rootPath);
+    const projectStatuses = options.snapshot.projects;
+    const codegraph = {
+      available: projectStatuses.every((project) => project.available),
+      initialized: projectStatuses.length > 0 && projectStatuses.every((project) => project.indexed),
+      compatible: projectStatuses.every((project) => project.compatible),
+      version: projectStatuses.find((project) => project.version)?.version,
+      projects: projectStatuses,
+    };
     return {
       workspace: {
         id: options.workspace.config.id,
@@ -73,8 +79,13 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   });
 
   app.get('/api/search', async (request) => {
-    const query = z.object({ q: z.string().default(''), limit: z.coerce.number().optional() }).parse(request.query);
-    return { query: query.q, results: store.search(query.q, query.limit) };
+    const query = z.object({
+      q: z.string().default(''),
+      limit: z.coerce.number().optional(),
+      project: z.string().optional(),
+    }).parse(request.query);
+    const projectIds = query.project?.split(',').map((value) => value.trim()).filter(Boolean);
+    return { query: query.q, projectIds, results: store.search(query.q, query.limit, projectIds) };
   });
 
   app.get('/api/nodes/:id', async (request, reply) => {
@@ -86,9 +97,18 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
 
   app.get('/api/graph', async (request) => {
     const query = z
-      .object({ view: z.enum(['full', 'directory', 'structure', 'methods', 'calls']).default('full') })
+      .object({
+        view: z.enum(['full', 'directory', 'structure', 'methods', 'calls']).default('full'),
+        project: z.string().optional(),
+        complete: z.enum(['0', '1']).default('0'),
+        limit: z.coerce.number().int().min(100).max(10_000).optional(),
+      })
       .parse(request.query);
-    return store.view(query.view as GraphView);
+    const projectIds = query.project?.split(',').map((value) => value.trim()).filter(Boolean);
+    return store.view(query.view as GraphView, projectIds, {
+      complete: query.complete === '1',
+      maxNodes: query.limit,
+    });
   });
 
   app.post('/api/graph/neighborhood', async (request) => {

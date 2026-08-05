@@ -1,11 +1,15 @@
-import { mkdtemp, mkdir, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  addWorkspaceProject,
+  discoverWorkspaceProjects,
   findWorkspaceRoot,
   initWorkspace,
   loadWorkspace,
+  removeWorkspaceProject,
+  resolveProjectRoot,
 } from '../src/core/workspace.js';
 
 describe('workspace lifecycle', () => {
@@ -15,7 +19,7 @@ describe('workspace lifecycle', () => {
     const workspace = await initWorkspace(root);
 
     expect(workspace.rootPath).toBe(root);
-    expect(workspace.config.schemaVersion).toBe(1);
+    expect(workspace.config.schemaVersion).toBe(2);
     expect(workspace.config.root).toBe('.');
     expect(workspace.config.name).toBe(root.split('/').at(-1));
     const persisted = JSON.parse(
@@ -48,5 +52,112 @@ describe('workspace lifecycle', () => {
     const root = join(tmpdir(), `missing-codeatlas-${Date.now()}`);
 
     await expect(initWorkspace(root)).rejects.toThrow('does not exist');
+  });
+
+  it('creates an empty Schema 2 workspace for multi-project aggregation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+
+    const workspace = await initWorkspace(root, { empty: true });
+
+    expect(workspace.config.schemaVersion).toBe(2);
+    expect(workspace.config.projects).toEqual([]);
+    const persisted = JSON.parse(
+      await readFile(join(root, '.codeatlas', 'workspace.json'), 'utf8'),
+    );
+    expect(persisted).not.toHaveProperty('codegraph');
+  });
+
+  it('migrates a Schema 1 workspace without changing its identity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const directory = join(root, '.codeatlas');
+    await mkdir(directory);
+    await writeFile(
+      join(directory, 'workspace.json'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: '2bb87472-0491-4a09-98ce-d6aba9dfd20d',
+        name: 'legacy',
+        root: '.',
+        initializedAt: '2026-08-04T00:00:00.000Z',
+        projects: [{ id: 'root', name: 'legacy', path: '.' }],
+        codegraph: { path: '.' },
+      }, null, 2)}\n`,
+    );
+
+    const workspace = await loadWorkspace(root);
+
+    expect(workspace.config).toMatchObject({
+      schemaVersion: 2,
+      id: '2bb87472-0491-4a09-98ce-d6aba9dfd20d',
+      projects: [{ id: 'root', name: 'legacy', path: '.' }],
+    });
+    const persisted = JSON.parse(
+      await readFile(join(root, '.codeatlas', 'workspace.json'), 'utf8'),
+    );
+    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted).not.toHaveProperty('codegraph');
+  });
+
+  it('adds and removes a portable project inside the workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const projectRoot = join(root, 'services', 'billing');
+    await mkdir(projectRoot, { recursive: true });
+    await initWorkspace(root, { empty: true });
+
+    const added = await addWorkspaceProject(root, projectRoot, { name: 'Billing API' });
+
+    expect(added.project).toMatchObject({
+      id: 'billing-api',
+      name: 'Billing API',
+      path: 'services/billing',
+    });
+    expect(resolveProjectRoot(added.workspace, added.project)).toBe(projectRoot);
+    expect((await loadWorkspace(root)).config.projects).toHaveLength(1);
+
+    const removed = await removeWorkspaceProject(root, 'billing-api');
+    expect(removed.project.id).toBe('billing-api');
+    expect(removed.workspace.config.projects).toEqual([]);
+  });
+
+  it('rejects duplicate and out-of-workspace project paths', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const projectRoot = join(root, 'app');
+    const outside = await mkdtemp(join(tmpdir(), 'codeatlas-outside-'));
+    await mkdir(projectRoot);
+    await initWorkspace(root, { empty: true });
+    await addWorkspaceProject(root, projectRoot);
+
+    await expect(addWorkspaceProject(root, projectRoot)).rejects.toThrow('already registered');
+    await expect(addWorkspaceProject(root, outside)).rejects.toThrow('inside the workspace');
+  });
+
+  it('discovers first-level projects from the conventional projects directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const projectsRoot = join(root, 'projects');
+    await mkdir(join(projectsRoot, 'api', '.git'), { recursive: true });
+    await mkdir(join(projectsRoot, 'web'), { recursive: true });
+    await writeFile(join(projectsRoot, 'web', 'package.json'), '{}\n');
+    await mkdir(join(projectsRoot, 'notes'), { recursive: true });
+    await mkdir(join(projectsRoot, 'node_modules', 'dependency'), { recursive: true });
+    await initWorkspace(root, { empty: true });
+
+    const discovered = await discoverWorkspaceProjects(root);
+
+    expect(discovered.scanRoot).toBe(projectsRoot);
+    expect(discovered.candidates.map((project) => project.name)).toEqual(['api', 'web']);
+    expect(discovered.alreadyRegistered).toEqual([]);
+  });
+
+  it('reports matching projects that are already registered', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const apiRoot = join(root, 'projects', 'api');
+    await mkdir(join(apiRoot, '.git'), { recursive: true });
+    await initWorkspace(root, { empty: true });
+    await addWorkspaceProject(root, apiRoot);
+
+    const discovered = await discoverWorkspaceProjects(root);
+
+    expect(discovered.candidates).toEqual([]);
+    expect(discovered.alreadyRegistered.map((project) => project.path)).toEqual(['projects/api']);
   });
 });

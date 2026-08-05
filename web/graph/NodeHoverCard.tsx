@@ -61,6 +61,7 @@ export function NodeHoverCard({ node, x, y }: NodeHoverCardProps) {
       </div>
 
       <dl className="hover-card-facts">
+        <div><dt>PROJECT</dt><dd>{node.projectId ?? 'workspace'}</dd></div>
         <div><dt>OWNER</dt><dd>{owner}</dd></div>
         <div><dt>QUALIFIED</dt><dd>{node.qualifiedName ?? '—'}</dd></div>
       </dl>

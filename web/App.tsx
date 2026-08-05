@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { GraphCanvas } from './graph/GraphCanvas';
 import type { AtlasNode, GraphProjection, ViewId, WorkspaceStatus } from './types';
@@ -35,12 +35,19 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState('all');
 
-  const loadView = useCallback(async (nextView: ViewId) => {
+  const loadView = useCallback(async (
+    nextView: ViewId,
+    projectId = selectedProjectId,
+    complete = false,
+  ) => {
     setLoading(true);
     setError(null);
     try {
-      const nextGraph = await api<GraphProjection>(`/api/graph?view=${nextView}`);
+      const projectQuery = projectId === 'all' ? '' : `&project=${encodeURIComponent(projectId)}`;
+      const completeQuery = complete ? '&complete=1' : '';
+      const nextGraph = await api<GraphProjection>(`/api/graph?view=${nextView}${projectQuery}${completeQuery}`);
       setGraph(nextGraph);
       setView(nextView);
       setSelected(null);
@@ -50,7 +57,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     Promise.all([api<WorkspaceStatus>('/api/status'), api<GraphProjection>('/api/graph?view=full')])
@@ -69,7 +76,12 @@ export default function App() {
       return;
     }
     try {
-      const response = await api<{ results: AtlasNode[] }>(`/api/search?q=${encodeURIComponent(search)}`);
+      const projectQuery = selectedProjectId === 'all'
+        ? ''
+        : `&project=${encodeURIComponent(selectedProjectId)}`;
+      const response = await api<{ results: AtlasNode[] }>(
+        `/api/search?q=${encodeURIComponent(search)}${projectQuery}`,
+      );
       setSearchResults(response.results);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -97,6 +109,20 @@ export default function App() {
   const selectSearchResult = async (node: AtlasNode) => {
     await focusNode(node, 'both');
   };
+
+  const selectProject = async (projectId: string) => {
+    setSelectedProjectId(projectId);
+    setSearchResults([]);
+    await loadView(view, projectId);
+  };
+
+  const projectNameById = useMemo(
+    () => new Map((status?.workspace.projects ?? []).map((project) => [project.id, project.name])),
+    [status],
+  );
+  const selectedProject = selectedProjectId === 'all'
+    ? null
+    : status?.workspace.projects.find((project) => project.id === selectedProjectId) ?? null;
 
   const kindCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -140,7 +166,7 @@ export default function App() {
                 <button type="button" key={node.id} onClick={() => void selectSearchResult(node)}>
                   <span className="result-kind">{node.kind}</span>
                   <span>{node.label}</span>
-                  <small>{node.filePath ?? node.qualifiedName}</small>
+                  <small>{node.projectId ? `${projectNameById.get(node.projectId) ?? node.projectId} · ` : ''}{node.filePath ?? node.qualifiedName}</small>
                 </button>
               ))}
             </div>
@@ -161,6 +187,32 @@ export default function App() {
           <h2>{status?.workspace.name ?? 'Loading…'}</h2>
           <p title={status?.workspace.rootPath}>{status?.workspace.rootPath ?? 'Resolving workspace'}</p>
         </div>
+
+        <section className="project-scope" aria-label="Project scope">
+          <span className="rail-label">PROJECT SCOPE</span>
+          <button
+            type="button"
+            className={selectedProjectId === 'all' ? 'active' : ''}
+            onClick={() => void selectProject('all')}
+          >
+            <span className="project-swatch project-all" />
+            <span>全部项目<small>ALL PROJECTS</small></span>
+            <strong>{status?.workspace.projects.length ?? 0}</strong>
+          </button>
+          {status?.codegraph.projects.map((project, index) => (
+            <button
+              type="button"
+              key={project.id}
+              className={selectedProjectId === project.id ? 'active' : ''}
+              onClick={() => void selectProject(project.id)}
+              style={{ '--project-index': index } as CSSProperties}
+            >
+              <span className="project-swatch" />
+              <span>{project.name}<small>{project.indexed && project.compatible ? 'INDEXED' : 'ATTENTION'}</small></span>
+              <strong>{project.totalNodes.toLocaleString()}</strong>
+            </button>
+          ))}
+        </section>
 
         <nav className="view-nav" aria-label="Graph views">
           <span className="rail-label">GRAPH PROJECTIONS</span>
@@ -199,13 +251,19 @@ export default function App() {
       <main className="map-stage">
         <div className="stage-header">
           <div>
-            <span className="stage-kicker">{focused ? 'FOCUSED PROJECTION' : 'COMPLETE WORKSPACE'}</span>
+            <span className="stage-kicker">{focused ? 'FOCUSED PROJECTION' : selectedProject ? 'PROJECT SCOPE' : 'COMPLETE WORKSPACE'}</span>
             <h1>{focused ? selected?.label ?? '局部探索' : VIEWS.find((item) => item.id === view)?.label}</h1>
+            <p className="scope-caption">{selectedProject ? `${selectedProject.name} PROJECT` : 'ALL PROJECTS'}</p>
           </div>
           <div className="stage-actions">
-            {focused && <button type="button" onClick={() => void loadView('full')}>← 返回完整空间</button>}
+            {focused && <button type="button" onClick={() => void loadView(view)}>← 返回完整空间</button>}
+            {!focused && graph?.projection.overview && (
+              <button type="button" className="render-all" onClick={() => void loadView(view, selectedProjectId, true)}>
+                渲染全部 {graph.projection.totalMatchedNodes.toLocaleString()} 个节点
+              </button>
+            )}
             <span className={graph?.projection.truncated ? 'data-warning' : 'data-complete'}>
-              {graph?.projection.truncated ? 'PARTIAL' : 'COMPLETE'}
+              {graph?.projection.overview ? 'OVERVIEW' : graph?.projection.truncated ? 'PARTIAL' : 'COMPLETE'}
             </span>
           </div>
         </div>
@@ -223,7 +281,11 @@ export default function App() {
           <div><span>WORKSPACE NODES</span><strong>{status?.graph.totalNodes.toLocaleString() ?? '—'}</strong></div>
           <div><span>RENDERED EDGES</span><strong>{graph?.projection.returnedEdges.toLocaleString() ?? '—'}</strong></div>
           <div><span>WORKSPACE EDGES</span><strong>{status?.graph.totalEdges.toLocaleString() ?? '—'}</strong></div>
-          {graph?.projection.truncationReason && <p>{graph.projection.truncationReason}</p>}
+          {graph?.projection.truncationReason && (
+            <p className={graph.projection.overview ? 'overview-message' : undefined}>
+              {graph.projection.truncationReason}
+            </p>
+          )}
         </footer>
       </main>
 
@@ -247,6 +309,7 @@ export default function App() {
               <h3>LOCATION</h3>
               <dl>
                 <div><dt>File</dt><dd>{selected.filePath ?? '—'}</dd></div>
+                <div><dt>Project</dt><dd>{selected.projectId ? projectNameById.get(selected.projectId) ?? selected.projectId : '—'}</dd></div>
                 <div><dt>Lines</dt><dd>{selected.startLine ? `${selected.startLine}–${selected.endLine}` : '—'}</dd></div>
                 <div><dt>Language</dt><dd>{selected.language ?? '—'}</dd></div>
               </dl>

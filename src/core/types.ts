@@ -12,15 +12,12 @@ export interface WorkspaceProject {
 }
 
 export interface WorkspaceConfig {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   name: string;
   root: '.';
   initializedAt: string;
   projects: WorkspaceProject[];
-  codegraph: {
-    path: '.';
-  };
 }
 
 export interface Workspace {
@@ -68,6 +65,18 @@ export interface GraphSnapshot {
     returnedNodes: number;
     returnedEdges: number;
   };
+  projects: Array<{
+    id: string;
+    name: string;
+    path: string;
+    indexed: boolean;
+    compatible: boolean;
+    available: boolean;
+    version?: string;
+    message?: string;
+    totalNodes: number;
+    totalEdges: number;
+  }>;
   truncated: boolean;
   truncationReason?: string;
 }

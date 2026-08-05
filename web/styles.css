@@ -107,6 +107,17 @@ body::after {
 .workspace-identity h2 { margin: 12px 0 5px; font: 600 20px/1.1 "Avenir Next Condensed", sans-serif; letter-spacing: .04em; }
 .workspace-identity p { margin: 0; color: var(--muted); font: 10px/1.5 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.project-scope { padding: 18px 0 12px; border-bottom: 1px solid var(--line); }
+.project-scope > .rail-label { padding: 0 20px 11px; }
+.project-scope button { width: 100%; display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px; padding: 9px 18px 9px 20px; border: 0; border-left: 2px solid transparent; background: transparent; color: #9bada7; text-align: left; cursor: pointer; }
+.project-scope button:hover { background: rgba(93,201,193,.045); }
+.project-scope button.active { border-left-color: var(--amber); background: linear-gradient(90deg, var(--amber-soft), transparent 90%); color: #f4ead2; }
+.project-scope button > span:nth-child(2) { min-width: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.project-scope button small { display: block; margin-top: 4px; color: #5d746d; font: 6px/1 ui-monospace, monospace; letter-spacing: .15em; }
+.project-scope button strong { color: #7e928b; font: 8px/1 ui-monospace, monospace; }
+.project-swatch { width: 7px; height: 7px; border: 1px solid rgba(255,255,255,.16); border-radius: 50%; background: hsl(calc(38 + var(--project-index, 0) * 67) 70% 65%); box-shadow: 0 0 9px color-mix(in srgb, currentColor 35%, transparent); }
+.project-all { border-radius: 1px; background: linear-gradient(135deg, var(--amber) 0 45%, var(--cyan) 45% 100%); }
+
 .view-nav { padding: 20px 0 12px; border-bottom: 1px solid var(--line); }
 .view-nav > .rail-label { padding: 0 20px 12px; }
 .view-nav button { position: relative; width: 100%; height: 58px; display: grid; grid-template-columns: 35px 1fr 20px; align-items: center; padding: 0 18px; border: 0; border-top: 1px solid transparent; border-bottom: 1px solid transparent; background: transparent; text-align: left; cursor: pointer; transition: .18s ease; }
@@ -134,8 +145,11 @@ body::after {
 .stage-header { display: flex; align-items: center; justify-content: space-between; padding: 0 22px; border-bottom: 1px solid var(--line); background: rgba(8,19,16,.82); }
 .stage-kicker { color: var(--amber); font: 600 8px/1 "Avenir Next Condensed", sans-serif; letter-spacing: .2em; }
 .stage-header h1 { margin: 7px 0 0; font: 500 22px/1 "Avenir Next Condensed", sans-serif; letter-spacing: .04em; }
+.scope-caption { margin: 5px 0 0; color: #60766f; font: 7px/1 ui-monospace, monospace; letter-spacing: .14em; }
 .stage-actions { display: flex; align-items: center; gap: 12px; }
 .stage-actions button { border: 1px solid var(--line-strong); padding: 8px 12px; background: #0b1815; cursor: pointer; font-size: 10px; }
+.stage-actions button.render-all { border-color: rgba(242,184,75,.35); color: #f4d58a; background: var(--amber-soft); }
+.stage-actions button.render-all:hover { border-color: var(--amber); color: #fff2cf; }
 .data-complete, .data-warning { padding: 6px 9px; border: 1px solid rgba(93,201,193,.25); color: var(--cyan); font: 700 8px ui-monospace, monospace; letter-spacing: .14em; }
 .data-warning { border-color: rgba(255,128,102,.35); color: var(--danger); }
 
@@ -187,6 +201,7 @@ body::after {
 .map-status span { color: #5e746d; font-size: 7px; letter-spacing: .15em; }
 .map-status strong { color: #c8d3ce; font: 11px ui-monospace, monospace; }
 .map-status p { position: absolute; bottom: 60px; left: 270px; color: var(--danger); font-size: 10px; }
+.map-status p.overview-message { color: #8eaaa1; }
 
 .detail-heading { padding: 24px 20px 19px; border-bottom: 1px solid var(--line); }
 .node-kind { display: inline-block; padding: 4px 7px; border: 1px solid rgba(93,201,193,.25); color: var(--cyan); font: 8px ui-monospace, monospace; text-transform: uppercase; letter-spacing: .15em; }
