@@ -54,11 +54,21 @@ export interface GraphEdge {
   metadata: Record<string, unknown>;
 }
 
+export interface GraphDiagnostic {
+  providerId?: string;
+  projectId?: string;
+  severity: 'warning' | 'error';
+  code: string;
+  message: string;
+  filePath?: string;
+}
+
 export interface GraphSnapshot {
   version: string;
   generatedAt: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  diagnostics: GraphDiagnostic[];
   counts: {
     totalNodes: number;
     totalEdges: number;

@@ -402,7 +402,7 @@ async function supports(context: DataFlowProjectContext): Promise<boolean> {
     try {
       const content = await readableSource(filePath);
       if (!content) continue;
-      if (extname(filePath).toLocaleLowerCase() === '.xml' && /<mapper\b[^>]*\bnamespace\s*=/i.test(content)) {
+      if (extname(filePath).toLocaleLowerCase() === '.xml' && /<mapper\b/i.test(content)) {
         return true;
       }
       if (extname(filePath).toLocaleLowerCase() === '.java' && /@TableName\b|\bBaseMapper\s*</.test(content)) {

@@ -1,13 +1,9 @@
-import type { GraphEdge, GraphNode, WorkspaceProject } from '../core/types.js';
+import type { GraphDiagnostic, GraphEdge, GraphNode, WorkspaceProject } from '../core/types.js';
 
 export type DataFlowDiagnosticSeverity = 'warning' | 'error';
 
-export interface DataFlowDiagnostic {
+export interface DataFlowDiagnostic extends GraphDiagnostic {
   providerId: string;
-  severity: DataFlowDiagnosticSeverity;
-  code: string;
-  message: string;
-  filePath?: string;
 }
 
 export interface DataFlowOverlay {

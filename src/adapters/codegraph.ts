@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { promisify } from 'node:util';
@@ -6,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type {
   CodeGraphStatus,
   EvidenceClass,
+  GraphDiagnostic,
   GraphEdge,
   GraphNode,
   GraphSnapshot,
@@ -13,9 +15,14 @@ import type {
   WorkspaceProject,
 } from '../core/types.js';
 import { resolveProjectRoot } from '../core/workspace.js';
+import { mergeDataFlowOverlay } from '../data-flow/merge.js';
+import type { DataFlowOverlay } from '../data-flow/provider.js';
+import { javaMyBatisProvider } from '../data-flow/providers/java-mybatis.js';
+import { DataFlowProviderRegistry } from '../data-flow/registry.js';
 
 const execFileAsync = promisify(execFile);
 const REQUIRED_TABLES = ['edges', 'files', 'nodes'] as const;
+const DATA_FLOW_PROVIDERS = new DataFlowProviderRegistry([javaMyBatisProvider]);
 
 interface LoadOptions {
   maxNodes?: number;
@@ -64,6 +71,7 @@ interface EdgeRow {
 interface ProjectGraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  diagnostics: GraphDiagnostic[];
   version: string;
   totalNodes: number;
   totalEdges: number;
@@ -335,11 +343,19 @@ async function loadProjectGraph(
       const source = rawNodeIds.get(edge.source) ?? `symbol:${project.id}:${edge.source}`;
       const target = rawNodeIds.get(edge.target) ?? `symbol:${project.id}:${edge.target}`;
       if (!nodeMap.has(source) || !nodeMap.has(target)) continue;
+      const sourceNode = nodeMap.get(source);
+      const targetNode = nodeMap.get(target);
+      const normalizedKind = relationKind(edge.kind);
+      const kind = normalizedKind === 'REFERENCES'
+        && sourceNode?.kind === 'route'
+        && (targetNode?.kind === 'method' || targetNode?.kind === 'function')
+        ? 'ROUTES_TO'
+        : normalizedKind;
       allEdges.push({
         id: `codegraph-edge:${project.id}:${edge.id}`,
         source,
         target,
-        kind: relationKind(edge.kind),
+        kind,
         sourceName: 'codegraph',
         evidenceClass: evidenceFor(edge.provenance),
         confidence: evidenceFor(edge.provenance) === 'heuristic' ? 0.72 : 0.96,
@@ -363,6 +379,7 @@ async function loadProjectGraph(
     return {
       nodes: allNodes,
       edges: normalizedEdges,
+      diagnostics: [],
       version: `${project.id}:${fileRows.length}:${nodeRows.length}:${edgeRows.length}:${latestIndex}`,
       totalNodes: allNodes.length,
       totalEdges: normalizedEdges.length,
@@ -370,6 +387,50 @@ async function loadProjectGraph(
   } finally {
     db.close();
   }
+}
+
+function overlayVersion(overlay: DataFlowOverlay): string {
+  const digest = createHash('sha256')
+    .update(JSON.stringify({
+      nodes: overlay.nodes.map((node) => [node.id, node.evidenceClass, node.confidence, node.metadata]),
+      edges: overlay.edges.map((edge) => [
+        edge.source,
+        edge.target,
+        edge.kind,
+        edge.evidenceClass,
+        edge.confidence,
+        edge.metadata,
+      ]),
+      diagnostics: overlay.diagnostics,
+    }))
+    .digest('hex')
+    .slice(0, 12);
+  return `${overlay.nodes.length}:${overlay.edges.length}:${digest}`;
+}
+
+async function enrichProjectDataFlow(
+  workspace: Workspace,
+  projectRoot: string,
+  project: WorkspaceProject,
+  data: ProjectGraphData,
+): Promise<ProjectGraphData> {
+  const overlay = await DATA_FLOW_PROVIDERS.extract({
+    workspaceRoot: workspace.rootPath,
+    projectRoot,
+    project,
+  });
+  const merged = mergeDataFlowOverlay(data.nodes, data.edges, overlay);
+  return {
+    ...data,
+    ...merged,
+    diagnostics: overlay.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      projectId: project.id,
+    })),
+    version: `${data.version}:dataflow:${overlayVersion(overlay)}`,
+    totalNodes: merged.nodes.length,
+    totalEdges: merged.edges.length,
+  };
 }
 
 interface PackageManifestProject {
@@ -457,7 +518,8 @@ export async function loadCodeGraphSnapshot(
     let data: ProjectGraphData | undefined;
     if (status.initialized && status.compatible) {
       try {
-        data = await loadProjectGraph(projectRoot, project, status.databasePath);
+        const codeGraphData = await loadProjectGraph(projectRoot, project, status.databasePath);
+        data = await enrichProjectDataFlow(workspace, projectRoot, project, codeGraphData);
       } catch (error) {
         status = {
           ...status,
@@ -478,6 +540,7 @@ export async function loadCodeGraphSnapshot(
           indexed: status.initialized,
           compatible: status.compatible,
           message: status.message,
+          diagnosticCount: data?.diagnostics.length ?? 0,
         },
       }),
     );
@@ -523,6 +586,7 @@ export async function loadCodeGraphSnapshot(
     generatedAt: new Date().toISOString(),
     nodes,
     edges,
+    diagnostics: projectResults.flatMap(({ data }) => data?.diagnostics ?? []),
     counts: {
       totalNodes: baseNodes.length,
       totalEdges: normalizedEdges.length,

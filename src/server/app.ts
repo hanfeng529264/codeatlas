@@ -74,6 +74,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
         returnedEdges: options.snapshot.counts.returnedEdges,
         truncated: options.snapshot.truncated,
         truncationReason: options.snapshot.truncationReason,
+        diagnosticCount: options.snapshot.diagnostics.length,
+        diagnostics: options.snapshot.diagnostics,
       },
     };
   });

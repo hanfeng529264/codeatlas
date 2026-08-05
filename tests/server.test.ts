@@ -38,7 +38,13 @@ describe('local query service', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       workspace: { name: expect.any(String) },
-      graph: { totalNodes: 7, totalEdges: 7, truncated: false },
+      graph: {
+        totalNodes: 7,
+        totalEdges: 7,
+        truncated: false,
+        diagnosticCount: 0,
+        diagnostics: [],
+      },
     });
   });
 
