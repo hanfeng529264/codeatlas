@@ -533,6 +533,7 @@ export async function loadCodeGraphSnapshot(
       ...project,
       indexed: status.initialized,
       compatible: status.compatible,
+      available: status.available,
       version: status.version,
       message: status.message,
       totalNodes: data?.totalNodes ?? 0,

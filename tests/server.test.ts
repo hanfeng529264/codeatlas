@@ -1,9 +1,9 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadCodeGraphSnapshot } from '../src/adapters/codegraph.js';
-import { initWorkspace } from '../src/core/workspace.js';
+import { addWorkspaceProject, initWorkspace } from '../src/core/workspace.js';
 import { buildServer } from '../src/server/app.js';
 import { createCodeGraphFixture } from './fixtures/codegraph-db.js';
 
@@ -62,7 +62,7 @@ describe('local query service', () => {
       url: '/api/graph/neighborhood',
       headers: { 'x-codeatlas-token': 'test-token' },
       payload: {
-        nodeId: 'symbol:n-auth',
+        nodeId: 'symbol:root:n-auth',
         direction: 'out',
         depth: 1,
         relationTypes: ['CALLS'],
@@ -72,8 +72,8 @@ describe('local query service', () => {
     expect(response.statusCode).toBe(200);
     const graph = response.json();
     expect(graph.nodes.map((node: { id: string }) => node.id)).toEqual([
-      'symbol:n-auth',
-      'symbol:n-session',
+      'symbol:root:n-auth',
+      'symbol:root:n-session',
     ]);
     expect(graph.edges).toHaveLength(1);
     expect(graph.projection).toMatchObject({ returnedNodes: 2, truncated: false });
@@ -85,13 +85,51 @@ describe('local query service', () => {
       url: '/api/graph/path',
       headers: { 'x-codeatlas-token': 'test-token' },
       payload: {
-        source: 'symbol:n-auth',
-        target: 'symbol:n-session',
+        source: 'symbol:root:n-auth',
+        target: 'symbol:root:n-session',
         relationTypes: ['CALLS'],
       },
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().path).toEqual(['symbol:n-auth', 'symbol:n-session']);
+    expect(response.json().path).toEqual(['symbol:root:n-auth', 'symbol:root:n-session']);
+  });
+
+  it('filters graph and search results by project id', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-server-multi-'));
+    const webRoot = join(root, 'web');
+    const apiRoot = join(root, 'api');
+    await mkdir(webRoot);
+    await mkdir(apiRoot);
+    await initWorkspace(root, { empty: true });
+    await addWorkspaceProject(root, webRoot, { name: 'Web' });
+    const apiProject = await addWorkspaceProject(root, apiRoot, { name: 'API' });
+    createCodeGraphFixture(webRoot);
+    createCodeGraphFixture(apiRoot);
+    const snapshot = await loadCodeGraphSnapshot(apiProject.workspace);
+    const multiApp = await buildServer({ workspace: apiProject.workspace, snapshot, token: 'test-token' });
+
+    try {
+      const graphResponse = await multiApp.inject({
+        method: 'GET',
+        url: '/api/graph?view=full&project=web',
+        headers: { 'x-codeatlas-token': 'test-token' },
+      });
+      const graph = graphResponse.json();
+      expect(graph.nodes).toContainEqual(expect.objectContaining({ id: 'project:web' }));
+      expect(graph.nodes).not.toContainEqual(expect.objectContaining({ id: 'project:api' }));
+      expect(graph.projection.projectIds).toEqual(['web']);
+
+      const searchResponse = await multiApp.inject({
+        method: 'GET',
+        url: '/api/search?q=login&project=api',
+        headers: { 'x-codeatlas-token': 'test-token' },
+      });
+      expect(searchResponse.json().results).toEqual([
+        expect.objectContaining({ id: 'symbol:api:n-auth', projectId: 'api' }),
+      ]);
+    } finally {
+      await multiApp.close();
+    }
   });
 });

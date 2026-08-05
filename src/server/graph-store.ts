@@ -15,6 +15,7 @@ export interface GraphProjection {
     returnedEdges: number;
     truncated: boolean;
     truncationReason?: string;
+    projectIds?: string[];
   };
   path?: string[];
 }
@@ -52,6 +53,7 @@ function projection(
   edges: GraphEdge[],
   totals = { nodes: nodes.length, edges: edges.length },
   truncationReason?: string,
+  projectIds?: string[],
 ): GraphProjection {
   return {
     version: snapshot.version,
@@ -65,6 +67,7 @@ function projection(
       returnedEdges: edges.length,
       truncated: Boolean(truncationReason),
       truncationReason,
+      projectIds,
     },
   };
 }
@@ -98,10 +101,12 @@ export class GraphStore {
     };
   }
 
-  search(query: string, limit = 20): GraphNode[] {
+  search(query: string, limit = 20, projectIds?: string[]): GraphNode[] {
     const needle = query.trim().toLocaleLowerCase();
     if (!needle) return [];
+    const selectedProjects = projectIds?.length ? new Set(projectIds) : null;
     return [...this.nodes.values()]
+      .filter((node) => !selectedProjects || Boolean(node.projectId && selectedProjects.has(node.projectId)))
       .map((node) => {
         const label = node.label.toLocaleLowerCase();
         const qualified = node.qualifiedName?.toLocaleLowerCase() ?? '';
@@ -120,14 +125,29 @@ export class GraphStore {
       .map((result) => result.node);
   }
 
-  view(view: GraphView): GraphProjection {
+  view(view: GraphView, projectIds?: string[]): GraphProjection {
+    const selectedProjects = projectIds?.length ? new Set(projectIds) : null;
+    const scopedNodes = selectedProjects
+      ? this.snapshot.nodes.filter(
+          (node) => node.kind === 'workspace' || Boolean(node.projectId && selectedProjects.has(node.projectId)),
+        )
+      : this.snapshot.nodes;
+    const scopedNodeIds = new Set(scopedNodes.map((node) => node.id));
+    const scopedEdges = selectedProjects
+      ? this.snapshot.edges.filter(
+          (edge) => scopedNodeIds.has(edge.source) && scopedNodeIds.has(edge.target),
+        )
+      : this.snapshot.edges;
     if (view === 'full') {
       return projection(
         this.snapshot,
-        this.snapshot.nodes,
-        this.snapshot.edges,
-        { nodes: this.snapshot.counts.totalNodes, edges: this.snapshot.counts.totalEdges },
+        scopedNodes,
+        scopedEdges,
+        selectedProjects
+          ? { nodes: scopedNodes.length, edges: scopedEdges.length }
+          : { nodes: this.snapshot.counts.totalNodes, edges: this.snapshot.counts.totalEdges },
         this.snapshot.truncated ? this.snapshot.truncationReason : undefined,
+        projectIds,
       );
     }
 
@@ -136,7 +156,7 @@ export class GraphStore {
       if (view === 'methods') return METHOD_KINDS.has(node.kind);
       return true;
     };
-    const candidateNodes = this.snapshot.nodes.filter(nodePredicate);
+    const candidateNodes = scopedNodes.filter(nodePredicate);
     const nodeIds = new Set(candidateNodes.map((node) => node.id));
     const edgePredicate = (edge: GraphEdge): boolean => {
       if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) return false;
@@ -144,16 +164,18 @@ export class GraphStore {
       if (view === 'structure' || view === 'methods') return STRUCTURE_RELATIONS.has(edge.kind);
       return CALL_RELATIONS.has(edge.kind);
     };
-    const candidateEdges = this.snapshot.edges.filter(edgePredicate);
+    const candidateEdges = scopedEdges.filter(edgePredicate);
     if (view === 'calls') {
       const connected = new Set(candidateEdges.flatMap((edge) => [edge.source, edge.target]));
-      return projection(
+      const result = projection(
         this.snapshot,
         candidateNodes.filter((node) => connected.has(node.id)),
         candidateEdges,
       );
+      result.projection.projectIds = projectIds;
+      return result;
     }
-    return projection(this.snapshot, candidateNodes, candidateEdges);
+    return projection(this.snapshot, candidateNodes, candidateEdges, undefined, undefined, projectIds);
   }
 
   neighborhood(options: NeighborhoodOptions): GraphProjection {

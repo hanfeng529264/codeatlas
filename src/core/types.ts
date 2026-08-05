@@ -71,6 +71,7 @@ export interface GraphSnapshot {
     path: string;
     indexed: boolean;
     compatible: boolean;
+    available: boolean;
     version?: string;
     message?: string;
     totalNodes: number;
