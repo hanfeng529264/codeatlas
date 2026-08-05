@@ -71,6 +71,29 @@ describe('CodeAtlas CLI', () => {
     expect(JSON.parse(await runCli(['project', 'list', root, '--json'])).projects).toEqual([]);
   });
 
+  it('scans and registers all discovered projects in one command', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
+    const projectsRoot = join(root, 'projects');
+    await mkdir(join(projectsRoot, 'api', '.git'), { recursive: true });
+    await mkdir(join(projectsRoot, 'web', 'src'), { recursive: true });
+    await mkdir(join(projectsRoot, 'docs'), { recursive: true });
+    await runCli(['init', root, '--empty']);
+
+    const output = await runCli([
+      'project', 'scan', '--workspace', root, '--skip-codegraph',
+    ]);
+    const listed = JSON.parse(await runCli(['project', 'list', root, '--json']));
+
+    expect(output).toContain(`Scanning for projects: ${projectsRoot}`);
+    expect(output).toContain('Project added: api (api)');
+    expect(output).toContain('Project added: web (web)');
+    expect(output).toContain('Scan complete: 2 added · 0 indexed · 0 already registered · 0 failed');
+    expect(listed.projects.map((project: { path: string }) => project.path)).toEqual([
+      'projects/api',
+      'projects/web',
+    ]);
+  });
+
   it('prints machine-readable status from a nested or explicit path', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
     await runCli(['init', root, '--skip-codegraph']);

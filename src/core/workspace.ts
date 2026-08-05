@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import type { Workspace, WorkspaceConfig, WorkspaceProject } from './types.js';
@@ -41,6 +41,47 @@ export interface InitWorkspaceOptions {
 export interface AddWorkspaceProjectOptions {
   name?: string;
 }
+
+export interface DiscoveredWorkspaceProject {
+  name: string;
+  path: string;
+  rootPath: string;
+}
+
+export interface WorkspaceProjectDiscovery {
+  scanRoot: string;
+  candidates: DiscoveredWorkspaceProject[];
+  alreadyRegistered: WorkspaceProject[];
+}
+
+const PROJECT_MARKERS = [
+  '.git',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'settings.gradle',
+  'settings.gradle.kts',
+  'package.json',
+  'go.mod',
+  'Cargo.toml',
+  'pyproject.toml',
+  'src',
+  'client',
+  'server',
+  'service',
+  'contract',
+] as const;
+
+const IGNORED_SCAN_DIRECTORIES = new Set([
+  'node_modules',
+  'target',
+  'build',
+  'dist',
+  'coverage',
+  'vendor',
+  'logs',
+  'tmp',
+]);
 
 async function assertDirectory(rootPath: string): Promise<void> {
   try {
@@ -202,6 +243,55 @@ export async function addWorkspaceProject(
   };
   await writeConfig(workspace.configPath, config);
   return { workspace: { ...workspace, config }, project };
+}
+
+async function directoryLooksLikeProject(rootPath: string): Promise<boolean> {
+  return (await Promise.all(
+    PROJECT_MARKERS.map((marker) => access(join(rootPath, marker)).then(() => true).catch(() => false)),
+  )).some(Boolean);
+}
+
+export async function discoverWorkspaceProjects(
+  startPath = process.cwd(),
+  inputPath?: string,
+): Promise<WorkspaceProjectDiscovery> {
+  const workspace = await loadWorkspace(startPath);
+  const conventionalRoot = join(workspace.rootPath, 'projects');
+  const hasConventionalRoot = await stat(conventionalRoot)
+    .then((info) => info.isDirectory())
+    .catch(() => false);
+  const scanRoot = inputPath
+    ? resolve(workspace.rootPath, inputPath)
+    : hasConventionalRoot
+      ? conventionalRoot
+      : workspace.rootPath;
+  await assertDirectory(scanRoot);
+  portableProjectPath(workspace.rootPath, scanRoot);
+
+  const entries = (await readdir(scanRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => !entry.name.startsWith('.'))
+    .filter((entry) => !IGNORED_SCAN_DIRECTORIES.has(entry.name))
+    .sort((left, right) => left.name.localeCompare(right.name, 'en'));
+  const registeredByPath = new Map(
+    workspace.config.projects.map((project) => [project.path, project]),
+  );
+  const candidates: DiscoveredWorkspaceProject[] = [];
+  const alreadyRegistered: WorkspaceProject[] = [];
+
+  for (const entry of entries) {
+    const rootPath = join(scanRoot, entry.name);
+    if (!(await directoryLooksLikeProject(rootPath))) continue;
+    const path = portableProjectPath(workspace.rootPath, rootPath);
+    const registered = registeredByPath.get(path);
+    if (registered) {
+      alreadyRegistered.push(registered);
+      continue;
+    }
+    candidates.push({ name: entry.name, path, rootPath });
+  }
+
+  return { scanRoot, candidates, alreadyRegistered };
 }
 
 export async function removeWorkspaceProject(

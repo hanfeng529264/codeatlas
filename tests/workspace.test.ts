@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   addWorkspaceProject,
+  discoverWorkspaceProjects,
   findWorkspaceRoot,
   initWorkspace,
   loadWorkspace,
@@ -128,5 +129,35 @@ describe('workspace lifecycle', () => {
 
     await expect(addWorkspaceProject(root, projectRoot)).rejects.toThrow('already registered');
     await expect(addWorkspaceProject(root, outside)).rejects.toThrow('inside the workspace');
+  });
+
+  it('discovers first-level projects from the conventional projects directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const projectsRoot = join(root, 'projects');
+    await mkdir(join(projectsRoot, 'api', '.git'), { recursive: true });
+    await mkdir(join(projectsRoot, 'web'), { recursive: true });
+    await writeFile(join(projectsRoot, 'web', 'package.json'), '{}\n');
+    await mkdir(join(projectsRoot, 'notes'), { recursive: true });
+    await mkdir(join(projectsRoot, 'node_modules', 'dependency'), { recursive: true });
+    await initWorkspace(root, { empty: true });
+
+    const discovered = await discoverWorkspaceProjects(root);
+
+    expect(discovered.scanRoot).toBe(projectsRoot);
+    expect(discovered.candidates.map((project) => project.name)).toEqual(['api', 'web']);
+    expect(discovered.alreadyRegistered).toEqual([]);
+  });
+
+  it('reports matching projects that are already registered', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-workspace-'));
+    const apiRoot = join(root, 'projects', 'api');
+    await mkdir(join(apiRoot, '.git'), { recursive: true });
+    await initWorkspace(root, { empty: true });
+    await addWorkspaceProject(root, apiRoot);
+
+    const discovered = await discoverWorkspaceProjects(root);
+
+    expect(discovered.candidates).toEqual([]);
+    expect(discovered.alreadyRegistered.map((project) => project.path)).toEqual(['projects/api']);
   });
 });

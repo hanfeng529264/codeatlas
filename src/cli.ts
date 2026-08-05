@@ -10,6 +10,7 @@ import { Command } from 'commander';
 import { inspectCodeGraph, loadCodeGraphSnapshot } from './adapters/codegraph.js';
 import {
   addWorkspaceProject,
+  discoverWorkspaceProjects,
   initWorkspace,
   loadWorkspace,
   removeWorkspaceProject,
@@ -164,6 +165,59 @@ export function createCli(io: CliIO = defaultIO): Command {
       } else {
         io.stdout(`CodeGraph index ready for ${added.project.name}${status.version ? ` (v${status.version})` : ''}.`);
       }
+    });
+
+  project
+    .command('scan')
+    .description('Discover and add first-level projects in one command')
+    .argument('[directory]', 'directory to scan; defaults to projects/ when present')
+    .option('-w, --workspace <path>', 'workspace path', process.cwd())
+    .option('--skip-codegraph', 'register projects without initializing CodeGraph')
+    .action(async (
+      inputPath: string | undefined,
+      flags: { workspace: string; skipCodegraph?: boolean },
+    ) => {
+      const discovery = await discoverWorkspaceProjects(flags.workspace, inputPath);
+      io.stdout(`Scanning for projects: ${discovery.scanRoot}`);
+      let added = 0;
+      let indexed = 0;
+      let failed = 0;
+
+      for (const candidate of discovery.candidates) {
+        try {
+          const result = await addWorkspaceProject(flags.workspace, candidate.rootPath, {
+            name: candidate.name,
+          });
+          added += 1;
+          io.stdout(`Project added: ${result.project.name} (${result.project.id})`);
+          if (flags.skipCodegraph) continue;
+
+          const projectRoot = resolveProjectRoot(result.workspace, result.project);
+          const status = await inspectCodeGraph(projectRoot);
+          if (!status.available) {
+            failed += 1;
+            io.stderr(`CodeGraph is not installed. ${result.project.name} was registered but not indexed.`);
+          } else if (!status.initialized) {
+            io.stdout(`Building the CodeGraph index for ${result.project.name}…`);
+            await runCodeGraph(['init', projectRoot], io);
+            indexed += 1;
+          } else {
+            indexed += 1;
+            io.stdout(`CodeGraph index ready for ${result.project.name}${status.version ? ` (v${status.version})` : ''}.`);
+          }
+        } catch (error) {
+          failed += 1;
+          const message = error instanceof Error ? error.message : String(error);
+          io.stderr(`Project failed: ${candidate.name} · ${message}`);
+        }
+      }
+
+      for (const registered of discovery.alreadyRegistered) {
+        io.stdout(`Project already registered: ${registered.name} (${registered.id})`);
+      }
+      io.stdout(
+        `Scan complete: ${added} added · ${indexed} indexed · ${discovery.alreadyRegistered.length} already registered · ${failed} failed`,
+      );
     });
 
   project

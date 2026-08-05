@@ -162,6 +162,7 @@ codegraph index --force /absolute/path/to/project
 |---|---|---|
 | `codeatlas init [path]` | 初始化工作空间和 CodeGraph 索引 | `--empty`、`--skip-codegraph` |
 | `codeatlas project add <path>` | 注册并索引工作空间内的项目 | `--workspace`、`--name`、`--skip-codegraph` |
+| `codeatlas project scan [directory]` | 自动发现、注册并索引一级子项目 | `--workspace`、`--skip-codegraph` |
 | `codeatlas project list [path]` | 列出工作空间项目 | `--json` |
 | `codeatlas project remove <id>` | 从工作空间取消注册，不删除代码或索引 | `--workspace` |
 | `codeatlas status [path]` | 查看工作空间与图谱健康状态 | `--json` |
@@ -196,17 +197,29 @@ CLI 会从给定路径（省略时为当前目录）向上寻找最近的 `.code
 
 ## 多项目工作空间
 
-先在所有项目的共同父目录创建一个空工作空间，再逐个注册项目：
+先在所有项目的共同父目录创建一个空工作空间，然后自动扫描项目：
 
 ```bash
 codeatlas init /workspace/team --empty
-
-codeatlas project add /workspace/team/frontend --workspace /workspace/team --name Frontend
-codeatlas project add /workspace/team/api --workspace /workspace/team --name API
+codeatlas project scan --workspace /workspace/team
 
 codeatlas project list /workspace/team
 codeatlas status /workspace/team
 codeatlas open /workspace/team
+```
+
+当工作空间存在 `/workspace/team/projects/` 时，`scan` 默认扫描该目录；否则扫描工作空间根目录。也可以指定其他内部目录：
+
+```bash
+codeatlas project scan ./services --workspace /workspace/team
+```
+
+扫描只识别一级子目录，并根据 `.git`、`pom.xml`、`package.json`、Gradle、Go、Rust、Python 清单或常见源码目录判断项目。隐藏目录、依赖和构建输出会被忽略，已经注册的项目会安全跳过。
+
+需要精确控制单个项目的名称时，仍可使用：
+
+```bash
+codeatlas project add /workspace/team/frontend --workspace /workspace/team --name Frontend
 ```
 
 每个项目继续持有自己的 `.codegraph/codegraph.db`；CodeAtlas 在读取时为节点 ID 加上项目命名空间并聚合结果，因此不同项目中的同名文件或符号不会冲突。Web 左侧的 **PROJECT SCOPE** 可切换全部项目或单个项目，搜索也会遵循当前范围。
