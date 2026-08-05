@@ -38,7 +38,13 @@ describe('local query service', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       workspace: { name: expect.any(String) },
-      graph: { totalNodes: 7, totalEdges: 7, truncated: false },
+      graph: {
+        totalNodes: 7,
+        totalEdges: 7,
+        truncated: false,
+        diagnosticCount: 0,
+        diagnostics: [],
+      },
     });
   });
 
@@ -77,6 +83,26 @@ describe('local query service', () => {
     ]);
     expect(graph.edges).toHaveLength(1);
     expect(graph.projection).toMatchObject({ returnedNodes: 2, truncated: false });
+  });
+
+  it('accepts the data view and returns an empty projection when no resource is indexed', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/graph?view=data',
+      headers: { 'x-codeatlas-token': 'test-token' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      nodes: [],
+      edges: [],
+      projection: {
+        totalMatchedNodes: 0,
+        totalMatchedEdges: 0,
+        returnedNodes: 0,
+        returnedEdges: 0,
+      },
+    });
   });
 
   it('finds the shortest path between two symbols', async () => {

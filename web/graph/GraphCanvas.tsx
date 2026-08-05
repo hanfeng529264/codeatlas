@@ -3,13 +3,14 @@ import Graph from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
 import type { Attributes } from 'graphology-types';
-import type { AtlasNode, GraphProjection } from '../types';
+import type { AtlasNode, GraphProjection, ViewId } from '../types';
 import { NodeDragController } from './drag';
 import { edgeIsOutsideSelection, nodeIsOutsideSelection } from './focus';
 import { NodeHoverCard } from './NodeHoverCard';
 
 interface GraphCanvasProps {
   graphData: GraphProjection;
+  view: ViewId;
   selectedId: string | null;
   onSelect: (node: AtlasNode | null) => void;
 }
@@ -27,6 +28,8 @@ const NODE_COLORS: Record<string, string> = {
   field: '#b9a0d6',
   variable: '#9c8cad',
   route: '#ff8066',
+  sql: '#e98a4a',
+  table: '#b7d866',
 };
 
 const NODE_SIZES: Record<string, number> = {
@@ -39,13 +42,35 @@ const NODE_SIZES: Record<string, number> = {
   interface: 8,
   function: 5,
   method: 4.5,
+  sql: 6,
+  table: 9,
 };
 
 const DEFAULT_LABEL_COLOR = '#d7e1dc';
 const HIGHLIGHT_LABEL_COLOR = '#17211e';
 const INBOUND_EDGE_COLOR = '#5dc9c1';
 const OUTBOUND_EDGE_COLOR = '#f2b84b';
-const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const CALL_RELATIONS = new Set(['CALLS', 'REMOTE_CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const FLOW_RELATIONS = new Set([
+  ...CALL_RELATIONS,
+  'CALLS_API',
+  'MAPS_TO',
+  'PUBLISHES_TO',
+  'READS_FROM',
+  'SUBSCRIBES_TO',
+  'WRITES_TO',
+]);
+const EDGE_COLORS: Record<string, string> = {
+  CALLS: '#587d75',
+  REMOTE_CALLS: '#b388ff',
+  ROUTES_TO: '#e98a4a',
+  READS_FROM: '#5dc9c1',
+  WRITES_TO: '#ff8066',
+  MAPS_TO: '#b9a0d6',
+  CALLS_API: '#7fa7ff',
+  PUBLISHES_TO: '#f2b84b',
+  SUBSCRIBES_TO: '#8db2a5',
+};
 const PROJECT_COLORS = ['#f2b84b', '#5dc9c1', '#7fa7ff', '#e98a4a', '#b9a0d6', '#ff8066'];
 
 interface HoverCardState {
@@ -68,6 +93,11 @@ function colorForNode(node: AtlasNode): string {
     return PROJECT_COLORS[hash(node.projectId) % PROJECT_COLORS.length];
   }
   return NODE_COLORS[node.kind] ?? '#a9b8b2';
+}
+
+export function colorForEdge(kind: string, evidenceClass: string): string {
+  if (evidenceClass === 'heuristic') return '#806a3b';
+  return EDGE_COLORS[kind] ?? '#30443f';
 }
 
 function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attributes> {
@@ -124,7 +154,7 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
       size: NODE_SIZES[node.kind] ?? 4,
       color: colorForNode(node),
       labelColor: DEFAULT_LABEL_COLOR,
-      forceLabel: node.kind === 'workspace' || node.kind === 'project',
+      forceLabel: node.kind === 'workspace' || node.kind === 'project' || node.kind === 'table',
       kind: node.kind,
       node,
       zIndex: NODE_SIZES[node.kind] ?? 4,
@@ -136,13 +166,14 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
       label: edge.kind,
       kind: edge.kind,
       type: edge.kind === 'CONTAINS' ? 'line' : 'arrow',
-      color:
-        edge.evidenceClass === 'heuristic'
-          ? '#806a3b'
-          : edge.kind === 'CALLS'
-            ? '#587d75'
-            : '#30443f',
-      size: edge.evidenceClass === 'heuristic' ? 0.45 : edge.kind === 'CALLS' ? 1.25 : 0.65,
+      color: colorForEdge(edge.kind, edge.evidenceClass),
+      size: edge.evidenceClass === 'heuristic'
+        ? 0.45
+        : ['READS_FROM', 'WRITES_TO', 'MAPS_TO'].includes(edge.kind)
+          ? 1.8
+          : edge.kind === 'CALLS' || edge.kind === 'REMOTE_CALLS'
+            ? 1.25
+            : 0.65,
       edge,
     });
   }
@@ -156,7 +187,7 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
   return graph;
 }
 
-export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProps) {
+export function GraphCanvas({ graphData, view, selectedId, onSelect }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<Sigma | null>(null);
   const selectedRef = useRef<string | null>(selectedId);
@@ -222,16 +253,16 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
         if (inbound || outbound) {
           const relation = String(attributes.kind);
           const directionEdges = inbound ? graph.inEdges(focus) : graph.outEdges(focus);
-          const labelEdge = directionEdges.find((candidate) =>
-            CALL_RELATIONS.has(String(graph.getEdgeAttribute(candidate, 'kind'))),
+          const labelEdge = directionEdges.find(
+            (candidate) => String(graph.getEdgeAttribute(candidate, 'kind')) === relation,
           );
-          const showCallLabel = CALL_RELATIONS.has(relation) && edge === labelEdge;
+          const showRelationLabel = FLOW_RELATIONS.has(relation) && edge === labelEdge;
           return {
             ...attributes,
             type: 'arrow',
-            label: showCallLabel ? `${relation} · ${inbound ? 'IN' : 'OUT'}` : '',
-            forceLabel: showCallLabel,
-            color: inbound ? INBOUND_EDGE_COLOR : OUTBOUND_EDGE_COLOR,
+            label: showRelationLabel ? `${relation} · ${inbound ? 'IN' : 'OUT'}` : '',
+            forceLabel: showRelationLabel,
+            color: EDGE_COLORS[relation] ?? (inbound ? INBOUND_EDGE_COLOR : OUTBOUND_EDGE_COLOR),
             size: selected ? 3.2 : 2.4,
             zIndex: 100,
           };
@@ -318,8 +349,17 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
     <>
       <div className="graph-canvas" ref={containerRef} aria-label="Interactive workspace graph" />
       {hoverCard && <NodeHoverCard node={hoverCard.node} x={hoverCard.x} y={hoverCard.y} />}
-      <div className={`graph-direction-key${selectedId ? ' is-active' : ''}`} aria-label="关系方向图例">
-        {selectedId ? (
+      <div className={`graph-direction-key${selectedId ? ' is-active' : ''}${view === 'data' ? ' data-flow-key' : ''}`} aria-label="关系方向图例">
+        {view === 'data' ? (
+          <>
+            <span className="relation-read"><i>→</i> READS_FROM</span>
+            <span className="relation-write"><i>→</i> WRITES_TO</span>
+            <span className="relation-map"><i>→</i> MAPS_TO</span>
+            <span className="relation-call"><i>→</i> CALLS</span>
+            <span style={{ color: '#b388ff' }}><i>⇢</i> REMOTE_CALLS</span>
+            <span className="direction-isolated">箭头指向关系目标 <small>{selectedId ? 'FOCUS' : 'FLOW'}</small></span>
+          </>
+        ) : selectedId ? (
           <>
             <span className="direction-in"><i>→</i> 进入当前节点 <small>IN</small></span>
             <span className="direction-out"><i>→</i> 从当前节点发出 <small>OUT</small></span>

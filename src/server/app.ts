@@ -74,6 +74,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
         returnedEdges: options.snapshot.counts.returnedEdges,
         truncated: options.snapshot.truncated,
         truncationReason: options.snapshot.truncationReason,
+        diagnosticCount: options.snapshot.diagnostics.length,
+        diagnostics: options.snapshot.diagnostics,
       },
     };
   });
@@ -98,7 +100,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   app.get('/api/graph', async (request) => {
     const query = z
       .object({
-        view: z.enum(['full', 'directory', 'structure', 'methods', 'calls']).default('full'),
+        view: z.enum(['full', 'directory', 'structure', 'methods', 'calls', 'data']).default('full'),
         project: z.string().optional(),
         complete: z.enum(['0', '1']).default('0'),
         limit: z.coerce.number().int().min(100).max(10_000).optional(),

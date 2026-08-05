@@ -1,6 +1,6 @@
 import type { GraphEdge, GraphNode, GraphSnapshot } from '../core/types.js';
 
-export type GraphView = 'full' | 'directory' | 'structure' | 'methods' | 'calls';
+export type GraphView = 'full' | 'directory' | 'structure' | 'methods' | 'calls' | 'data';
 export type GraphDirection = 'in' | 'out' | 'both';
 
 export interface GraphProjection {
@@ -51,11 +51,34 @@ const STRUCTURE_RELATIONS = new Set([
   'REFERENCES',
 ]);
 const METHOD_KINDS = new Set(['file', 'class', 'interface', 'function', 'method']);
-const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const CALL_RELATIONS = new Set(['CALLS', 'REMOTE_CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const DATA_RESOURCE_KINDS = new Set([
+  'cache',
+  'database',
+  'external_api',
+  'table',
+  'topic',
+]);
+const DATA_FLOW_RELATIONS = new Set([
+  'CALLS',
+  'REMOTE_CALLS',
+  'CALLS_API',
+  'MAPS_TO',
+  'PUBLISHES_TO',
+  'READS_FROM',
+  'ROUTES_TO',
+  'SUBSCRIBES_TO',
+  'WRITES_TO',
+]);
 export const DEFAULT_OVERVIEW_NODE_LIMIT = 2_500;
 
 const OVERVIEW_KIND_PRIORITY: Record<string, number> = {
   workspace: 1_000,
+  database: 980,
+  table: 970,
+  topic: 960,
+  cache: 950,
+  external_api: 940,
   project: 900,
   module: 800,
   directory: 700,
@@ -164,6 +187,9 @@ export class GraphStore {
         ? { nodes: scopedNodes.length, edges: scopedEdges.length }
         : { nodes: this.snapshot.counts.totalNodes, edges: this.snapshot.counts.totalEdges });
     }
+    if (view === 'data') {
+      return this.dataView(scopedNodes, scopedEdges, projectIds, options);
+    }
 
     const nodePredicate = (node: GraphNode): boolean => {
       if (view === 'directory') return DIRECTORY_KINDS.has(node.kind);
@@ -189,6 +215,41 @@ export class GraphStore {
       );
     }
     return this.limitView(candidateNodes, candidateEdges, projectIds, options);
+  }
+
+  private dataView(
+    scopedNodes: GraphNode[],
+    scopedEdges: GraphEdge[],
+    projectIds: string[] | undefined,
+    options: ViewOptions,
+  ): GraphProjection {
+    const allowedEdges = scopedEdges.filter((edge) => DATA_FLOW_RELATIONS.has(edge.kind));
+    const incoming = new Map<string, GraphEdge[]>();
+    for (const edge of allowedEdges) {
+      const values = incoming.get(edge.target) ?? [];
+      values.push(edge);
+      incoming.set(edge.target, values);
+    }
+
+    const resources = scopedNodes.filter((node) => DATA_RESOURCE_KINDS.has(node.kind));
+    const reachable = new Set(resources.map((node) => node.id));
+    const queue = [...reachable];
+    let cursor = 0;
+    while (cursor < queue.length) {
+      const target = queue[cursor];
+      cursor += 1;
+      for (const edge of incoming.get(target) ?? []) {
+        if (reachable.has(edge.source)) continue;
+        reachable.add(edge.source);
+        queue.push(edge.source);
+      }
+    }
+
+    const nodes = scopedNodes.filter((node) => reachable.has(node.id));
+    const edges = allowedEdges.filter(
+      (edge) => reachable.has(edge.source) && reachable.has(edge.target),
+    );
+    return this.limitView(nodes, edges, projectIds, options);
   }
 
   private limitView(
@@ -233,7 +294,9 @@ export class GraphStore {
     const candidateIds = new Set(nodes.map((node) => node.id));
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const selected = new Map<string, GraphNode>();
-    const roots = nodes.filter((node) => node.kind === 'workspace' || node.kind === 'project');
+    const roots = nodes.filter(
+      (node) => node.kind === 'workspace' || node.kind === 'project' || DATA_RESOURCE_KINDS.has(node.kind),
+    );
     for (const node of roots.slice(0, maxNodes)) selected.set(node.id, node);
 
     const containsBySource = new Map<string, string[]>();
@@ -311,6 +374,7 @@ export class GraphStore {
 
   private overviewEdgeScore(edge: GraphEdge): number {
     if (edge.kind === 'CONTAINS') return 300;
+    if (DATA_FLOW_RELATIONS.has(edge.kind)) return 250;
     if (CALL_RELATIONS.has(edge.kind)) return 200;
     if (STRUCTURE_RELATIONS.has(edge.kind)) return 100;
     return 0;

@@ -27,3 +27,22 @@ test('explores the complete workspace and focuses a searched symbol', async ({ p
   await page.getByRole('button', { name: /全部项目.*ALL PROJECTS/ }).click();
   await expect(page.getByText('COMPLETE WORKSPACE', { exact: true })).toBeVisible();
 });
+
+test('explores directional data flows and provider evidence', async ({ page }) => {
+  await page.goto('/?token=e2e-token');
+
+  await page.getByRole('button', { name: '05 数据链路 DATA FLOW ↗' }).click();
+  await expect(page.getByRole('heading', { name: '数据链路' })).toBeVisible();
+  await expect(page.getByText(/READS_FROM/)).toBeVisible();
+  await expect(page.getByText(/WRITES_TO/)).toBeVisible();
+  await expect(page.getByText('1 DIAGNOSTIC', { exact: true })).toBeVisible();
+  await expect(page.getByText('TABLES', { exact: true })).toBeVisible();
+
+  await page.getByRole('textbox', { name: 'Search workspace graph' }).fill('audit_log');
+  await page.getByRole('button', { name: 'Run search' }).click();
+  await page.getByRole('button', { name: /table audit_log API/ }).click();
+
+  await expect(page.getByRole('heading', { name: 'audit_log', level: 2 })).toBeVisible();
+  await expect(page.getByText('FLOW RELATIONS', { exact: true })).toBeVisible();
+  await expect(page.getByText('java-mybatis', { exact: true }).first()).toBeVisible();
+});

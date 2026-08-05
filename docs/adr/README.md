@@ -8,5 +8,7 @@
 | [0004](0004-sqlite-over-graph-database.md) | Accepted | MVP 使用 SQLite 而非独立图数据库 |
 | [0005](0005-full-graph-progressive-rendering.md) | Accepted | 完整图采用 WebGL 与分级渲染 |
 | [0006](0006-project-index-aggregation.md) | Accepted | 聚合每个项目的独立 CodeGraph 索引 |
+| [0007](0007-language-neutral-data-flow-providers.md) | Accepted | 使用语言无关核心与内部框架 Provider 构建数据链路 |
+| [0008](0008-cross-project-contract-call-bridges.md) | Accepted | 以 Maven 坐标与精确 Java 契约证据连接跨项目调用 |
 
 ADR 记录已确认且会影响长期维护成本的架构决策。发生方向变化时新增 ADR 并标记旧决策为 Superseded，不直接改写历史原因。

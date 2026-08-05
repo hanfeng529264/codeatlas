@@ -64,6 +64,7 @@ function largeSnapshot(): GraphSnapshot {
     generatedAt: new Date().toISOString(),
     nodes,
     edges,
+    diagnostics: [],
     counts: {
       totalNodes: nodes.length,
       totalEdges: edges.length,

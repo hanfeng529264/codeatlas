@@ -34,6 +34,15 @@ export interface AtlasEdge {
   metadata: Record<string, unknown>;
 }
 
+export interface GraphDiagnostic {
+  providerId?: string;
+  projectId?: string;
+  severity: 'warning' | 'error';
+  code: string;
+  message: string;
+  filePath?: string;
+}
+
 export interface GraphProjection {
   version: string;
   generatedAt: string;
@@ -86,7 +95,9 @@ export interface WorkspaceStatus {
     returnedEdges: number;
     truncated: boolean;
     truncationReason?: string;
+    diagnosticCount: number;
+    diagnostics: GraphDiagnostic[];
   };
 }
 
-export type ViewId = 'full' | 'directory' | 'structure' | 'methods' | 'calls';
+export type ViewId = 'full' | 'directory' | 'structure' | 'methods' | 'calls' | 'data';
