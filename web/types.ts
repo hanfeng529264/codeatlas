@@ -46,6 +46,7 @@ export interface GraphProjection {
     returnedEdges: number;
     truncated: boolean;
     truncationReason?: string;
+    projectIds?: string[];
   };
   path?: string[];
 }
@@ -63,6 +64,18 @@ export interface WorkspaceStatus {
     compatible: boolean;
     version?: string;
     message?: string;
+    projects: Array<{
+      id: string;
+      name: string;
+      path: string;
+      indexed: boolean;
+      compatible: boolean;
+      available: boolean;
+      version?: string;
+      message?: string;
+      totalNodes: number;
+      totalEdges: number;
+    }>;
   };
   graph: {
     version: string;

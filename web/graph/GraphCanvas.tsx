@@ -45,6 +45,7 @@ const HIGHLIGHT_LABEL_COLOR = '#17211e';
 const INBOUND_EDGE_COLOR = '#5dc9c1';
 const OUTBOUND_EDGE_COLOR = '#f2b84b';
 const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const PROJECT_COLORS = ['#f2b84b', '#5dc9c1', '#7fa7ff', '#e98a4a', '#b9a0d6', '#ff8066'];
 
 interface HoverCardState {
   node: AtlasNode;
@@ -59,6 +60,13 @@ function hash(value: string): number {
     output = Math.imul(output, 16777619);
   }
   return output >>> 0;
+}
+
+function colorForNode(node: AtlasNode): string {
+  if (node.kind === 'project' && node.projectId) {
+    return PROJECT_COLORS[hash(node.projectId) % PROJECT_COLORS.length];
+  }
+  return NODE_COLORS[node.kind] ?? '#a9b8b2';
 }
 
 function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attributes> {
@@ -81,8 +89,9 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
       size: NODE_SIZES[node.kind] ?? 4,
-      color: NODE_COLORS[node.kind] ?? '#a9b8b2',
+      color: colorForNode(node),
       labelColor: DEFAULT_LABEL_COLOR,
+      forceLabel: node.kind === 'workspace' || node.kind === 'project',
       kind: node.kind,
       node,
       zIndex: NODE_SIZES[node.kind] ?? 4,
