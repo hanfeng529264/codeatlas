@@ -51,7 +51,7 @@ const STRUCTURE_RELATIONS = new Set([
   'REFERENCES',
 ]);
 const METHOD_KINDS = new Set(['file', 'class', 'interface', 'function', 'method']);
-const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const CALL_RELATIONS = new Set(['CALLS', 'REMOTE_CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
 const DATA_RESOURCE_KINDS = new Set([
   'cache',
   'database',
@@ -61,6 +61,7 @@ const DATA_RESOURCE_KINDS = new Set([
 ]);
 const DATA_FLOW_RELATIONS = new Set([
   'CALLS',
+  'REMOTE_CALLS',
   'CALLS_API',
   'MAPS_TO',
   'PUBLISHES_TO',

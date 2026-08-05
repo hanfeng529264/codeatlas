@@ -15,6 +15,8 @@ import type {
   WorkspaceProject,
 } from '../core/types.js';
 import { resolveProjectRoot } from '../core/workspace.js';
+import { javaMavenContractProvider } from '../cross-project/providers/java-maven.js';
+import { CrossProjectProviderRegistry } from '../cross-project/registry.js';
 import { mergeDataFlowOverlay } from '../data-flow/merge.js';
 import type { DataFlowOverlay } from '../data-flow/provider.js';
 import { javaMyBatisProvider } from '../data-flow/providers/java-mybatis.js';
@@ -23,6 +25,7 @@ import { DataFlowProviderRegistry } from '../data-flow/registry.js';
 const execFileAsync = promisify(execFile);
 const REQUIRED_TABLES = ['edges', 'files', 'nodes'] as const;
 const DATA_FLOW_PROVIDERS = new DataFlowProviderRegistry([javaMyBatisProvider]);
+const CROSS_PROJECT_PROVIDERS = new CrossProjectProviderRegistry([javaMavenContractProvider]);
 
 interface LoadOptions {
   maxNodes?: number;
@@ -557,6 +560,12 @@ export async function loadCodeGraphSnapshot(
   }
 
   for (const edge of await packageDependencyEdges(workspace)) allEdges.push(edge);
+  const crossProjectOverlay = await CROSS_PROJECT_PROVIDERS.extract({
+    workspace,
+    nodes: baseNodes,
+    edges: allEdges,
+  });
+  for (const edge of crossProjectOverlay.edges) allEdges.push(edge);
   const uniqueEdges = new Map<string, GraphEdge>();
   for (const edge of allEdges) {
     uniqueEdges.set(`${edge.source}\u0000${edge.target}\u0000${edge.kind}`, edge);
@@ -582,11 +591,14 @@ export async function loadCodeGraphSnapshot(
   const truncationReason = [unavailableReason, budgetReason].filter(Boolean).join(' ');
 
   return {
-    version: `${workspace.config.id}:${projectResults.map(({ data, project }) => data?.version ?? `${project.id}:missing`).join('|')}`,
+    version: `${workspace.config.id}:${projectResults.map(({ data, project }) => data?.version ?? `${project.id}:missing`).join('|')}:cross-project:${crossProjectOverlay.edges.length}`,
     generatedAt: new Date().toISOString(),
     nodes,
     edges,
-    diagnostics: projectResults.flatMap(({ data }) => data?.diagnostics ?? []),
+    diagnostics: [
+      ...projectResults.flatMap(({ data }) => data?.diagnostics ?? []),
+      ...crossProjectOverlay.diagnostics,
+    ],
     counts: {
       totalNodes: baseNodes.length,
       totalEdges: normalizedEdges.length,

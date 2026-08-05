@@ -12,7 +12,7 @@ const VIEWS: Array<{ id: ViewId; code: string; label: string; caption: string }>
   { id: 'data', code: '05', label: '数据链路', caption: 'DATA FLOW' },
 ];
 
-const DATA_RELATIONS = new Set(['READS_FROM', 'WRITES_TO', 'MAPS_TO', 'CALLS_API', 'PUBLISHES_TO', 'SUBSCRIBES_TO']);
+const DATA_RELATIONS = new Set(['READS_FROM', 'WRITES_TO', 'MAPS_TO', 'REMOTE_CALLS', 'CALLS_API', 'PUBLISHES_TO', 'SUBSCRIBES_TO']);
 
 const EVIDENCE_LABELS: Record<string, string> = {
   verified: '已验证',
@@ -141,6 +141,7 @@ export default function App() {
       reads: edgeCounts.get('READS_FROM') ?? 0,
       writes: edgeCounts.get('WRITES_TO') ?? 0,
       mappings: edgeCounts.get('MAPS_TO') ?? 0,
+      remoteCalls: edgeCounts.get('REMOTE_CALLS') ?? 0,
     };
   }, [graph]);
 
@@ -294,6 +295,7 @@ export default function App() {
                 <span><small>READS</small><b>{dataStats.reads.toLocaleString()}</b></span>
                 <span><small>WRITES</small><b>{dataStats.writes.toLocaleString()}</b></span>
                 <span><small>MAPS</small><b>{dataStats.mappings.toLocaleString()}</b></span>
+                <span><small>REMOTE</small><b>{dataStats.remoteCalls.toLocaleString()}</b></span>
               </div>
             )}
             {!focused && view === 'data' && visibleDiagnostics.length > 0 && (
@@ -381,7 +383,7 @@ export default function App() {
 
             {selectedDataRelations.length > 0 && (
               <section className="detail-section data-relations-section">
-                <h3>DATA RELATIONS</h3>
+                <h3>FLOW RELATIONS</h3>
                 <div className="data-relation-list">
                   {selectedDataRelations.map(({ edge, direction, other }) => (
                     <div className={`data-relation-row relation-${edge.kind.toLocaleLowerCase()}`} key={edge.id}>
@@ -390,7 +392,12 @@ export default function App() {
                         <small>{direction === 'out' ? 'OUT →' : '← IN'}</small>
                       </div>
                       <strong>{other?.label ?? (direction === 'out' ? edge.target : edge.source)}</strong>
-                      <em>{edge.sourceName}{typeof edge.metadata.operation === 'string' ? ` · ${edge.metadata.operation}` : ''}</em>
+                      <em>
+                        {edge.sourceName}
+                        {typeof edge.metadata.operation === 'string' ? ` · ${edge.metadata.operation}` : ''}
+                        {typeof edge.metadata.interface === 'string' ? ` · ${edge.metadata.interface}` : ''}
+                        {typeof edge.metadata.dependency === 'string' ? ` · ${edge.metadata.dependency}` : ''}
+                      </em>
                     </div>
                   ))}
                 </div>

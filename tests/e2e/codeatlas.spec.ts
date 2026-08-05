@@ -43,6 +43,6 @@ test('explores directional data flows and provider evidence', async ({ page }) =
   await page.getByRole('button', { name: /table audit_log API/ }).click();
 
   await expect(page.getByRole('heading', { name: 'audit_log', level: 2 })).toBeVisible();
-  await expect(page.getByText('DATA RELATIONS', { exact: true })).toBeVisible();
+  await expect(page.getByText('FLOW RELATIONS', { exact: true })).toBeVisible();
   await expect(page.getByText('java-mybatis', { exact: true }).first()).toBeVisible();
 });

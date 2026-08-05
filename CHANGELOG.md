@@ -6,11 +6,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- Java/MyBatis 表级数据链路，包括 XML SQL、MyBatis-Plus 实体映射和 `READS_FROM`、`WRITES_TO`、`MAPS_TO`。
+- “数据链路”Web 投影、表节点视觉语义、读写方向、Provider 诊断和关系证据详情。
+- Java/Maven 跨项目契约桥接：使用 Maven 坐标、完整限定接口、方法名和参数个数生成 `REMOTE_CALLS`。
+- 独立项目中的 HTTP Route 现在可以沿可信静态调用链到达 core 项目的数据库表。
+
+### Known limitations
+
+- 首个数据流 Provider 覆盖 Java/Spring/MyBatis；其他语言和 ORM 尚待接入。
+- 跨项目方法桥接首个 Provider 覆盖 Java/Maven；候选不唯一或类型无法静态还原时会跳过并给出诊断。
+- 当前为表级静态链路，不包含字段级污点传播和运行时 Trace。
+
 ### Planned
 
 - 保存视角、链路和人工知识标注。
 - 面向 AI 客户端的 CodeAtlas MCP 服务。
-- 数据库关系图、静态数据流和运行时 Trace 数据源。
+- Schema、字段级静态数据流和运行时 Trace 数据源。
 
 ## [0.2.0] - 2026-08-05
 

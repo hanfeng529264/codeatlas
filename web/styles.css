@@ -161,6 +161,7 @@ body::after {
 .data-flow-summary small { color: #708566; font-size: 6px; letter-spacing: .14em; }
 .data-flow-summary b { margin-top: 4px; color: var(--acid); font-size: 10px; }
 .diagnostic-badge { padding: 7px 9px; border: 1px solid rgba(242,184,75,.34); background: rgba(242,184,75,.1); color: #f0cb7c; font: 700 7px/1 ui-monospace, monospace; letter-spacing: .11em; cursor: help; }
+.relation-remote_calls b { color: #b388ff; }
 
 .map-frame { position: relative; min-height: 0; overflow: hidden; background-color: #071210; background-image: linear-gradient(rgba(122,158,147,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(122,158,147,.055) 1px, transparent 1px), linear-gradient(rgba(122,158,147,.022) 1px, transparent 1px), linear-gradient(90deg, rgba(122,158,147,.022) 1px, transparent 1px); background-size: 72px 72px,72px 72px,12px 12px,12px 12px; }
 .map-frame::before, .map-frame::after { content: ""; position: absolute; pointer-events: none; z-index: 3; }

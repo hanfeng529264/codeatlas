@@ -59,7 +59,7 @@ describe('data graph projection', () => {
     ];
     const edges = [
       edge('route-controller', 'route:list', 'controller:list', 'ROUTES_TO'),
-      edge('controller-service', 'controller:list', 'service:list', 'CALLS'),
+      edge('controller-service', 'controller:list', 'service:list', 'REMOTE_CALLS'),
       edge('service-sql', 'service:list', 'sql:list', 'CALLS'),
       edge('sql-table', 'sql:list', 'table:orders:order_info', 'READS_FROM'),
       edge('health-call', 'controller:health', 'service:health', 'CALLS'),
@@ -81,6 +81,7 @@ describe('data graph projection', () => {
       'service-sql',
       'sql-table',
     ]);
+    expect(result.edges).toContainEqual(expect.objectContaining({ kind: 'REMOTE_CALLS' }));
     expect(result.projection).toMatchObject({
       totalMatchedNodes: 5,
       totalMatchedEdges: 4,

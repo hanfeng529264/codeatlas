@@ -50,7 +50,7 @@ const DEFAULT_LABEL_COLOR = '#d7e1dc';
 const HIGHLIGHT_LABEL_COLOR = '#17211e';
 const INBOUND_EDGE_COLOR = '#5dc9c1';
 const OUTBOUND_EDGE_COLOR = '#f2b84b';
-const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+const CALL_RELATIONS = new Set(['CALLS', 'REMOTE_CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
 const FLOW_RELATIONS = new Set([
   ...CALL_RELATIONS,
   'CALLS_API',
@@ -62,6 +62,7 @@ const FLOW_RELATIONS = new Set([
 ]);
 const EDGE_COLORS: Record<string, string> = {
   CALLS: '#587d75',
+  REMOTE_CALLS: '#b388ff',
   ROUTES_TO: '#e98a4a',
   READS_FROM: '#5dc9c1',
   WRITES_TO: '#ff8066',
@@ -170,7 +171,7 @@ function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attrib
         ? 0.45
         : ['READS_FROM', 'WRITES_TO', 'MAPS_TO'].includes(edge.kind)
           ? 1.8
-          : edge.kind === 'CALLS'
+          : edge.kind === 'CALLS' || edge.kind === 'REMOTE_CALLS'
             ? 1.25
             : 0.65,
       edge,
@@ -355,6 +356,7 @@ export function GraphCanvas({ graphData, view, selectedId, onSelect }: GraphCanv
             <span className="relation-write"><i>→</i> WRITES_TO</span>
             <span className="relation-map"><i>→</i> MAPS_TO</span>
             <span className="relation-call"><i>→</i> CALLS</span>
+            <span style={{ color: '#b388ff' }}><i>⇢</i> REMOTE_CALLS</span>
             <span className="direction-isolated">箭头指向关系目标 <small>{selectedId ? 'FOCUS' : 'FLOW'}</small></span>
           </>
         ) : selectedId ? (
