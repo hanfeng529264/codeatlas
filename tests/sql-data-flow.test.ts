@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractSqlTableFacts } from '../src/adapters/java-data-flow.js';
+import { extractSqlTableFacts } from '../src/data-flow/sql.js';
 
 describe('SQL table fact extraction', () => {
   it('extracts SELECT sources and JOIN targets with source lines', () => {
