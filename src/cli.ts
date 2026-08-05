@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,7 @@ import {
 import { buildServer } from './server/app.js';
 
 const execFileAsync = promisify(execFile);
+const packageVersion = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
 
 export interface CliIO {
   stdout: (message: string) => void;
@@ -89,7 +91,7 @@ export function createCli(io: CliIO = defaultIO): Command {
   program
     .name('codeatlas')
     .description('Local code cartography for humans and AI')
-    .version('0.1.0')
+    .version(packageVersion)
     .configureOutput({
       writeOut: (value) => io.stdout(value.trimEnd()),
       writeErr: (value) => io.stderr(value.trimEnd()),

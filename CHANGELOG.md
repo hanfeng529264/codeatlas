@@ -8,10 +8,33 @@
 
 ### Planned
 
-- 多项目索引、项目切换和跨项目关系聚合。
 - 保存视角、链路和人工知识标注。
 - 面向 AI 客户端的 CodeAtlas MCP 服务。
 - 数据库关系图、静态数据流和运行时 Trace 数据源。
+
+## [0.2.0] - 2026-08-05
+
+多项目工作空间版本。
+
+### Added
+
+- Schema 2 工作空间项目注册表，以及 `init --empty` 和 `project add/list/remove` CLI。
+- 多个独立 CodeGraph SQLite 索引的命名空间隔离与统一聚合。
+- 全部项目与单项目图谱切换、项目范围搜索、项目健康状态和稳定配色。
+- 基于工作空间 `package.json` 明确依赖的跨项目 `DEPENDS_ON` 关系。
+- 多项目 API、单元/集成测试、Playwright 端到端测试和 GitHub Actions CI。
+
+### Changed
+
+- `status` 与 `sync` 现在遍历工作空间内注册的所有项目。
+- Schema 1 单项目工作空间在读取时自动迁移到 Schema 2，无需重新初始化。
+- 项目与工作空间节点名称固定显示，提高全空间图的可读性。
+
+### Known limitations
+
+- 项目必须位于工作空间根目录内部。
+- 跨项目关系目前只解析 JavaScript/TypeScript `package.json`；不推断方法级跨项目调用。
+- 尚未实现 MCP、知识持久化、数据库关系图和完整数据流。
 
 ## [0.1.0] - 2026-08-04
 
