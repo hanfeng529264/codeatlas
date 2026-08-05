@@ -94,19 +94,27 @@ codeatlas --help
 
 ## 快速开始
 
-### 单项目：初始化并打开
+普通使用只需要一个命令：
+
+```bash
+codeatlas open /absolute/path/to/project
+```
+
+CodeAtlas 会自动：
+
+1. 初始化工作空间。
+2. 识别单项目或 `projects/` 多项目结构。
+3. 注册发现的项目并建立缺少的 CodeGraph 索引。
+4. 端口占用时自动选择可用端口。
+5. 启动本地服务并打开图谱。
+
+`open` 和 `init` 都可以安全重复执行。已有配置不会被覆盖，已注册项目不会重复添加。
+
+只想准备索引、暂时不打开页面时：
 
 ```bash
 codeatlas init /absolute/path/to/project
 ```
-
-该命令会：
-
-1. 在项目根目录创建 `.codeatlas/workspace.json`。
-2. 检查本机是否安装 CodeGraph。
-3. 在项目尚未建立索引时运行 `codegraph init`。
-
-`init` 可以安全重复执行。已经初始化的工作空间不会被覆盖，也不会自动执行全量重建。
 
 检查状态：
 
@@ -130,15 +138,9 @@ Graph      12,480 nodes · 31,026 edges
 codeatlas status /absolute/path/to/project --json
 ```
 
-打开图谱：
-
-```bash
-codeatlas open /absolute/path/to/project
-```
-
 CodeAtlas 会启动本地 Web 服务并打开浏览器。终端需要保持运行；按 `Ctrl+C` 停止服务。
 
-默认端口为 `43117`。端口被占用时可以指定其他端口：
+默认端口为 `43117`；被占用时 CodeAtlas 会自动选择可用端口。需要固定端口时也可以显式指定：
 
 ```bash
 codeatlas open /absolute/path/to/project --port 43118
@@ -160,14 +162,14 @@ codegraph index --force /absolute/path/to/project
 
 | 命令 | 用途 | 常用选项 |
 |---|---|---|
-| `codeatlas init [path]` | 初始化工作空间和 CodeGraph 索引 | `--empty`、`--skip-codegraph` |
+| `codeatlas init [path]` | 初始化、发现项目并建立 CodeGraph 索引 | `--empty`、`--skip-codegraph`、`--no-discover` |
 | `codeatlas project add <path>` | 注册并索引工作空间内的项目 | `--workspace`、`--name`、`--skip-codegraph` |
 | `codeatlas project scan [directory]` | 自动发现、注册并索引一级子项目 | `--workspace`、`--skip-codegraph` |
 | `codeatlas project list [path]` | 列出工作空间项目 | `--json` |
 | `codeatlas project remove <id>` | 从工作空间取消注册，不删除代码或索引 | `--workspace` |
 | `codeatlas status [path]` | 查看工作空间与图谱健康状态 | `--json` |
 | `codeatlas sync [path]` | 增量同步代码变化 | — |
-| `codeatlas open [path]` | 启动本地 Web 应用 | `--port`、`--no-browser` |
+| `codeatlas open [path]` | 自动初始化、发现、索引并打开图谱 | `--port`、`--no-browser`、`--no-discover` |
 
 CLI 会从给定路径（省略时为当前目录）向上寻找最近的 `.codeatlas/workspace.json`。
 
@@ -197,16 +199,13 @@ CLI 会从给定路径（省略时为当前目录）向上寻找最近的 `.code
 
 ## 多项目工作空间
 
-先在所有项目的共同父目录创建一个空工作空间，然后自动扫描项目：
+多项目也只需要执行 `open`。当共同父目录下存在 `projects/` 时会自动识别：
 
 ```bash
-codeatlas init /workspace/team --empty
-codeatlas project scan --workspace /workspace/team
-
-codeatlas project list /workspace/team
-codeatlas status /workspace/team
 codeatlas open /workspace/team
 ```
+
+`init`、`project scan/add/list/remove` 保留给需要预先建索引或精确控制注册范围的用户。
 
 当工作空间存在 `/workspace/team/projects/` 时，`scan` 默认扫描该目录；否则扫描工作空间根目录。也可以指定其他内部目录：
 

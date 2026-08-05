@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createCli, isMainModule } from '../src/cli.js';
+import { createCli, isMainModule, prepareWorkspaceForUse } from '../src/cli.js';
 
 async function runCli(args: string[]): Promise<string> {
   const output: string[] = [];
@@ -45,6 +45,53 @@ describe('CodeAtlas CLI', () => {
 
     expect(output).toContain('Empty multi-project workspace ready');
     expect(config.projects).toEqual([]);
+  });
+
+  it('automatically discovers a multi-project layout during init', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
+    await mkdir(join(root, 'projects', 'api', '.git'), { recursive: true });
+    await mkdir(join(root, 'projects', 'web', 'src'), { recursive: true });
+
+    const output = await runCli(['init', root, '--skip-codegraph']);
+    const config = JSON.parse(await readFile(join(root, '.codeatlas', 'workspace.json'), 'utf8'));
+
+    expect(output).toContain('Multi-project layout detected: 2 projects');
+    expect(config.projects.map((project: { path: string }) => project.path)).toEqual([
+      'projects/api',
+      'projects/web',
+    ]);
+  });
+
+  it('can disable automatic discovery during init', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
+    await mkdir(join(root, 'projects', 'api', '.git'), { recursive: true });
+
+    await runCli(['init', root, '--skip-codegraph', '--no-discover']);
+    const config = JSON.parse(await readFile(join(root, '.codeatlas', 'workspace.json'), 'utf8'));
+
+    expect(config.projects).toEqual([{ id: 'root', name: root.split('/').at(-1), path: '.' }]);
+  });
+
+  it('prepares an uninitialized workspace for zero-configuration open', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cli-'));
+    await mkdir(join(root, 'projects', 'api', '.git'), { recursive: true });
+    const output: string[] = [];
+
+    const workspace = await prepareWorkspaceForUse(root, {
+      create: true,
+      discover: true,
+      index: false,
+      io: {
+        stdout: (message) => output.push(message),
+        stderr: (message) => output.push(message),
+      },
+    });
+
+    expect(workspace.created).toBe(false);
+    expect(workspace.config.projects).toEqual([
+      { id: 'api', name: 'api', path: 'projects/api' },
+    ]);
+    expect(output.join('\n')).toContain('Workspace initialized automatically');
   });
 
   it('adds, lists, and removes workspace projects without indexing', async () => {

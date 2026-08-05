@@ -11,12 +11,15 @@ import { inspectCodeGraph, loadCodeGraphSnapshot } from './adapters/codegraph.js
 import {
   addWorkspaceProject,
   discoverWorkspaceProjects,
+  findWorkspaceRoot,
   initWorkspace,
   loadWorkspace,
   removeWorkspaceProject,
   resolveProjectRoot,
 } from './core/workspace.js';
+import type { Workspace } from './core/types.js';
 import { buildServer } from './server/app.js';
+import type { FastifyInstance } from 'fastify';
 
 const execFileAsync = promisify(execFile);
 const packageVersion = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
@@ -49,6 +52,87 @@ function openBrowser(url: string): void {
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   const child = spawn(command, args, { detached: true, stdio: 'ignore' });
   child.unref();
+}
+
+async function listenLocally(
+  app: FastifyInstance,
+  requestedPort: number,
+  io: CliIO,
+): Promise<void> {
+  try {
+    await app.listen({ host: '127.0.0.1', port: requestedPort });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+    io.stdout(`Port ${requestedPort} is already in use; selecting an available port automatically.`);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+  }
+}
+
+export interface PrepareWorkspaceForUseOptions {
+  create: boolean;
+  discover: boolean;
+  index: boolean;
+  io: CliIO;
+}
+
+export async function prepareWorkspaceForUse(
+  inputPath: string,
+  options: PrepareWorkspaceForUseOptions,
+): Promise<Workspace> {
+  const existingRoot = await findWorkspaceRoot(inputPath);
+  let workspace: Workspace;
+  if (existingRoot) {
+    workspace = await loadWorkspace(existingRoot);
+  } else if (options.create) {
+    const initialized = await initWorkspace(inputPath);
+    options.io.stdout(`Workspace initialized automatically: ${initialized.rootPath}`);
+    workspace = initialized;
+  } else {
+    workspace = await loadWorkspace(inputPath);
+  }
+
+  if (options.discover) {
+    const discovery = await discoverWorkspaceProjects(workspace.rootPath);
+    const rootProject = workspace.config.projects.length === 1
+      && workspace.config.projects[0]?.path === '.';
+    const conventionalMultiProjectLayout = discovery.scanRoot !== workspace.rootPath
+      && discovery.candidates.length > 0;
+    if (rootProject && conventionalMultiProjectLayout) {
+      await removeWorkspaceProject(workspace.rootPath, workspace.config.projects[0]!.id);
+      workspace = await loadWorkspace(workspace.rootPath);
+      options.io.stdout('Converted root registration to a multi-project workspace.');
+    }
+
+    let added = 0;
+    for (const candidate of discovery.candidates) {
+      const result = await addWorkspaceProject(workspace.rootPath, candidate.rootPath, {
+        name: candidate.name,
+      });
+      workspace = result.workspace;
+      added += 1;
+    }
+    if (added > 0) {
+      options.io.stdout(`Multi-project layout detected: ${added} projects registered automatically.`);
+    }
+  }
+
+  workspace = await loadWorkspace(workspace.rootPath);
+  if (options.index) {
+    for (const project of workspace.config.projects) {
+      const projectRoot = resolveProjectRoot(workspace, project);
+      const status = await inspectCodeGraph(projectRoot);
+      if (!status.available) {
+        options.io.stderr(`CodeGraph is not installed. ${project.name} is registered but not indexed.`);
+      } else if (!status.initialized) {
+        options.io.stdout(`Building the CodeGraph index for ${project.name}…`);
+        await runCodeGraph(['init', projectRoot], options.io);
+      } else {
+        options.io.stdout(`CodeGraph index ready for ${project.name}${status.version ? ` (v${status.version})` : ''}.`);
+      }
+    }
+  }
+
+  return workspace;
 }
 
 async function statusFor(inputPath?: string) {
@@ -104,7 +188,11 @@ export function createCli(io: CliIO = defaultIO): Command {
     .argument('[path]', 'workspace path', process.cwd())
     .option('--skip-codegraph', 'create only the CodeAtlas workspace')
     .option('--empty', 'create an empty multi-project workspace')
-    .action(async (inputPath: string, flags: { skipCodegraph?: boolean; empty?: boolean }) => {
+    .option('--no-discover', 'disable automatic multi-project discovery')
+    .action(async (
+      inputPath: string,
+      flags: { skipCodegraph?: boolean; empty?: boolean; discover: boolean },
+    ) => {
       const workspace = await initWorkspace(inputPath, { empty: flags.empty });
       io.stdout(
         workspace.created
@@ -115,20 +203,14 @@ export function createCli(io: CliIO = defaultIO): Command {
         io.stdout('Empty multi-project workspace ready. Add projects with "codeatlas project add".');
         return;
       }
+      await prepareWorkspaceForUse(workspace.rootPath, {
+        create: false,
+        discover: flags.discover,
+        index: !flags.skipCodegraph,
+        io,
+      });
       if (flags.skipCodegraph) {
         io.stdout('CodeGraph initialization skipped.');
-        return;
-      }
-      const status = await inspectCodeGraph(workspace.rootPath);
-      if (!status.available) {
-        io.stderr('CodeGraph is not installed. The workspace is ready, but no code facts were generated.');
-        return;
-      }
-      if (!status.initialized) {
-        io.stdout('Building the CodeGraph index…');
-        await runCodeGraph(['init', workspace.rootPath], io);
-      } else {
-        io.stdout(`CodeGraph index ready${status.version ? ` (v${status.version})` : ''}.`);
       }
     });
 
@@ -295,12 +377,21 @@ export function createCli(io: CliIO = defaultIO): Command {
 
   program
     .command('open')
-    .description('Start the local CodeAtlas web application')
-    .argument('[path]', 'workspace path')
+    .description('Initialize, discover, index, and open a CodeAtlas workspace')
+    .argument('[path]', 'workspace path', process.cwd())
     .option('-p, --port <number>', 'local port', '43117')
     .option('--no-browser', 'do not launch the browser')
-    .action(async (inputPath: string | undefined, flags: { port: string; browser: boolean }) => {
-      const workspace = await loadWorkspace(inputPath);
+    .option('--no-discover', 'disable automatic multi-project discovery')
+    .action(async (
+      inputPath: string,
+      flags: { port: string; browser: boolean; discover: boolean },
+    ) => {
+      const workspace = await prepareWorkspaceForUse(inputPath, {
+        create: true,
+        discover: flags.discover,
+        index: true,
+        io,
+      });
       const snapshot = await loadCodeGraphSnapshot(workspace);
       const token = randomBytes(24).toString('base64url');
       const staticRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/web');
@@ -315,7 +406,7 @@ export function createCli(io: CliIO = defaultIO): Command {
       if (!Number.isInteger(port) || port < 0 || port > 65_535) {
         throw new Error(`Invalid port: ${flags.port}`);
       }
-      await app.listen({ host: '127.0.0.1', port });
+      await listenLocally(app, port, io);
       const address = app.server.address();
       const actualPort = typeof address === 'object' && address ? address.port : port;
       const url = `http://127.0.0.1:${actualPort}/?token=${encodeURIComponent(token)}`;

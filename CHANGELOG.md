@@ -20,6 +20,7 @@
 
 - Schema 2 工作空间项目注册表，以及 `init --empty` 和 `project add/list/remove` CLI。
 - `project scan [directory]` 自动发现、批量注册并索引一级子项目。
+- `open` 零配置工作流：自动初始化工作空间、发现项目、建立缺失索引并避让占用端口。
 - 多个独立 CodeGraph SQLite 索引的命名空间隔离与统一聚合。
 - 全部项目与单项目图谱切换、项目范围搜索、项目健康状态和稳定配色。
 - 基于工作空间 `package.json` 明确依赖的跨项目 `DEPENDS_ON` 关系。
@@ -28,6 +29,7 @@
 ### Changed
 
 - `status` 与 `sync` 现在遍历工作空间内注册的所有项目。
+- `init` 默认识别约定的多项目布局；可用 `--no-discover` 关闭。
 - Schema 1 单项目工作空间在读取时自动迁移到 Schema 2，无需重新初始化。
 - 项目与工作空间节点名称固定显示，提高全空间图的可读性。
 
