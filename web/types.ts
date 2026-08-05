@@ -100,4 +100,4 @@ export interface WorkspaceStatus {
   };
 }
 
-export type ViewId = 'full' | 'directory' | 'structure' | 'methods' | 'calls';
+export type ViewId = 'full' | 'directory' | 'structure' | 'methods' | 'calls' | 'data';
