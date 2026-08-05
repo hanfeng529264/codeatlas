@@ -65,6 +65,17 @@ export interface GraphSnapshot {
     returnedNodes: number;
     returnedEdges: number;
   };
+  projects: Array<{
+    id: string;
+    name: string;
+    path: string;
+    indexed: boolean;
+    compatible: boolean;
+    version?: string;
+    message?: string;
+    totalNodes: number;
+    totalEdges: number;
+  }>;
   truncated: boolean;
   truncationReason?: string;
 }
