@@ -483,8 +483,8 @@ export async function loadCodeGraphSnapshot(
     );
     allEdges.push(containsEdge(workspaceId, projectNodeId));
     if (data) {
-      baseNodes.push(...data.nodes);
-      allEdges.push(...data.edges);
+      for (const node of data.nodes) baseNodes.push(node);
+      for (const edge of data.edges) allEdges.push(edge);
     }
     projectResults.push({ project, status, data });
   }
@@ -493,7 +493,7 @@ export async function loadCodeGraphSnapshot(
     throw new Error('No compatible CodeGraph project index is available. Initialize at least one project first.');
   }
 
-  allEdges.push(...await packageDependencyEdges(workspace));
+  for (const edge of await packageDependencyEdges(workspace)) allEdges.push(edge);
   const uniqueEdges = new Map<string, GraphEdge>();
   for (const edge of allEdges) {
     uniqueEdges.set(`${edge.source}\u0000${edge.target}\u0000${edge.kind}`, edge);

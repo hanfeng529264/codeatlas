@@ -148,6 +148,8 @@ body::after {
 .scope-caption { margin: 5px 0 0; color: #60766f; font: 7px/1 ui-monospace, monospace; letter-spacing: .14em; }
 .stage-actions { display: flex; align-items: center; gap: 12px; }
 .stage-actions button { border: 1px solid var(--line-strong); padding: 8px 12px; background: #0b1815; cursor: pointer; font-size: 10px; }
+.stage-actions button.render-all { border-color: rgba(242,184,75,.35); color: #f4d58a; background: var(--amber-soft); }
+.stage-actions button.render-all:hover { border-color: var(--amber); color: #fff2cf; }
 .data-complete, .data-warning { padding: 6px 9px; border: 1px solid rgba(93,201,193,.25); color: var(--cyan); font: 700 8px ui-monospace, monospace; letter-spacing: .14em; }
 .data-warning { border-color: rgba(255,128,102,.35); color: var(--danger); }
 
@@ -199,6 +201,7 @@ body::after {
 .map-status span { color: #5e746d; font-size: 7px; letter-spacing: .15em; }
 .map-status strong { color: #c8d3ce; font: 11px ui-monospace, monospace; }
 .map-status p { position: absolute; bottom: 60px; left: 270px; color: var(--danger); font-size: 10px; }
+.map-status p.overview-message { color: #8eaaa1; }
 
 .detail-heading { padding: 24px 20px 19px; border-bottom: 1px solid var(--line); }
 .node-kind { display: inline-block; padding: 4px 7px; border: 1px solid rgba(93,201,193,.25); color: var(--cyan); font: 8px ui-monospace, monospace; text-transform: uppercase; letter-spacing: .15em; }

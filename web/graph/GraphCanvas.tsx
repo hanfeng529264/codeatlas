@@ -71,23 +71,55 @@ function colorForNode(node: AtlasNode): string {
 
 function buildGraph(data: GraphProjection): Graph<Attributes, Attributes, Attributes> {
   const graph = new Graph({ type: 'directed', multi: true, allowSelfLoops: true });
-  const kindGroups = new Map<string, AtlasNode[]>();
+  const layoutGroups = new Map<string, AtlasNode[]>();
   for (const node of data.nodes) {
-    const group = kindGroups.get(node.kind) ?? [];
+    const groupKey = data.projection.overview ? (node.projectId ?? '__workspace__') : node.kind;
+    const group = layoutGroups.get(groupKey) ?? [];
     group.push(node);
-    kindGroups.set(node.kind, group);
+    layoutGroups.set(groupKey, group);
   }
-  const kinds = [...kindGroups.keys()].sort();
+  const groupKeys = [...layoutGroups.keys()].sort((left, right) => {
+    if (left === '__workspace__') return -1;
+    if (right === '__workspace__') return 1;
+    return left.localeCompare(right);
+  });
+  const nodeIndexes = new Map<string, number>();
+  for (const group of layoutGroups.values()) {
+    group.forEach((node, index) => nodeIndexes.set(node.id, index));
+  }
   for (const node of data.nodes) {
-    const group = kindGroups.get(node.kind) ?? [node];
-    const index = group.findIndex((candidate) => candidate.id === node.id);
-    const kindIndex = Math.max(0, kinds.indexOf(node.kind));
-    const angle = (index / Math.max(1, group.length)) * Math.PI * 2 + (hash(node.id) % 17) / 17;
-    const radius = 15 + kindIndex * 21 + Math.sqrt(index) * 4;
+    const groupKey = data.projection.overview ? (node.projectId ?? '__workspace__') : node.kind;
+    const group = layoutGroups.get(groupKey) ?? [node];
+    const index = nodeIndexes.get(node.id) ?? 0;
+    const groupIndex = Math.max(0, groupKeys.indexOf(groupKey));
+    let x: number;
+    let y: number;
+    if (data.projection.overview) {
+      const projectGroups = Math.max(1, groupKeys.length - (groupKeys[0] === '__workspace__' ? 1 : 0));
+      const projectIndex = groupKey === '__workspace__' ? 0 : groupIndex - (groupKeys[0] === '__workspace__' ? 1 : 0);
+      const clusterAngle = (projectIndex / projectGroups) * Math.PI * 2 - Math.PI / 2;
+      const centerRadius = groupKey === '__workspace__' ? 0 : 230;
+      const centerX = Math.cos(clusterAngle) * centerRadius;
+      const centerY = Math.sin(clusterAngle) * centerRadius;
+      if (node.kind === 'workspace' || node.kind === 'project') {
+        x = centerX;
+        y = centerY;
+      } else {
+        const localAngle = index * 2.399963229728653 + (hash(node.id) % 13) / 13;
+        const localRadius = 10 + Math.sqrt(index) * 4.2;
+        x = centerX + Math.cos(localAngle) * localRadius;
+        y = centerY + Math.sin(localAngle) * localRadius;
+      }
+    } else {
+      const angle = (index / Math.max(1, group.length)) * Math.PI * 2 + (hash(node.id) % 17) / 17;
+      const radius = 15 + groupIndex * 21 + Math.sqrt(index) * 4;
+      x = Math.cos(angle) * radius;
+      y = Math.sin(angle) * radius;
+    }
     graph.addNode(node.id, {
       label: node.label,
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
+      x,
+      y,
       size: NODE_SIZES[node.kind] ?? 4,
       color: colorForNode(node),
       labelColor: DEFAULT_LABEL_COLOR,

@@ -97,11 +97,18 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
 
   app.get('/api/graph', async (request) => {
     const query = z
-      .object({ view: z.enum(['full', 'directory', 'structure', 'methods', 'calls']).default('full') })
-      .extend({ project: z.string().optional() })
+      .object({
+        view: z.enum(['full', 'directory', 'structure', 'methods', 'calls']).default('full'),
+        project: z.string().optional(),
+        complete: z.enum(['0', '1']).default('0'),
+        limit: z.coerce.number().int().min(100).max(10_000).optional(),
+      })
       .parse(request.query);
     const projectIds = query.project?.split(',').map((value) => value.trim()).filter(Boolean);
-    return store.view(query.view as GraphView, projectIds);
+    return store.view(query.view as GraphView, projectIds, {
+      complete: query.complete === '1',
+      maxNodes: query.limit,
+    });
   });
 
   app.post('/api/graph/neighborhood', async (request) => {

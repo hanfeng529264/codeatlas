@@ -37,12 +37,17 @@ export default function App() {
   const [focused, setFocused] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState('all');
 
-  const loadView = useCallback(async (nextView: ViewId, projectId = selectedProjectId) => {
+  const loadView = useCallback(async (
+    nextView: ViewId,
+    projectId = selectedProjectId,
+    complete = false,
+  ) => {
     setLoading(true);
     setError(null);
     try {
       const projectQuery = projectId === 'all' ? '' : `&project=${encodeURIComponent(projectId)}`;
-      const nextGraph = await api<GraphProjection>(`/api/graph?view=${nextView}${projectQuery}`);
+      const completeQuery = complete ? '&complete=1' : '';
+      const nextGraph = await api<GraphProjection>(`/api/graph?view=${nextView}${projectQuery}${completeQuery}`);
       setGraph(nextGraph);
       setView(nextView);
       setSelected(null);
@@ -252,8 +257,13 @@ export default function App() {
           </div>
           <div className="stage-actions">
             {focused && <button type="button" onClick={() => void loadView(view)}>← 返回完整空间</button>}
+            {!focused && graph?.projection.overview && (
+              <button type="button" className="render-all" onClick={() => void loadView(view, selectedProjectId, true)}>
+                渲染全部 {graph.projection.totalMatchedNodes.toLocaleString()} 个节点
+              </button>
+            )}
             <span className={graph?.projection.truncated ? 'data-warning' : 'data-complete'}>
-              {graph?.projection.truncated ? 'PARTIAL' : 'COMPLETE'}
+              {graph?.projection.overview ? 'OVERVIEW' : graph?.projection.truncated ? 'PARTIAL' : 'COMPLETE'}
             </span>
           </div>
         </div>
@@ -271,7 +281,11 @@ export default function App() {
           <div><span>WORKSPACE NODES</span><strong>{status?.graph.totalNodes.toLocaleString() ?? '—'}</strong></div>
           <div><span>RENDERED EDGES</span><strong>{graph?.projection.returnedEdges.toLocaleString() ?? '—'}</strong></div>
           <div><span>WORKSPACE EDGES</span><strong>{status?.graph.totalEdges.toLocaleString() ?? '—'}</strong></div>
-          {graph?.projection.truncationReason && <p>{graph.projection.truncationReason}</p>}
+          {graph?.projection.truncationReason && (
+            <p className={graph.projection.overview ? 'overview-message' : undefined}>
+              {graph.projection.truncationReason}
+            </p>
+          )}
         </footer>
       </main>
 

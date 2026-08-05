@@ -47,6 +47,7 @@ export interface GraphProjection {
     truncated: boolean;
     truncationReason?: string;
     projectIds?: string[];
+    overview: boolean;
   };
   path?: string[];
 }

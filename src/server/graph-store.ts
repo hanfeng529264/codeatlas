@@ -16,6 +16,7 @@ export interface GraphProjection {
     truncated: boolean;
     truncationReason?: string;
     projectIds?: string[];
+    overview: boolean;
   };
   path?: string[];
 }
@@ -35,6 +36,11 @@ interface PathOptions {
   maxDepth?: number;
 }
 
+interface ViewOptions {
+  complete?: boolean;
+  maxNodes?: number;
+}
+
 const DIRECTORY_KINDS = new Set(['workspace', 'project', 'module', 'directory', 'file']);
 const STRUCTURE_RELATIONS = new Set([
   'CONTAINS',
@@ -46,6 +52,19 @@ const STRUCTURE_RELATIONS = new Set([
 ]);
 const METHOD_KINDS = new Set(['file', 'class', 'interface', 'function', 'method']);
 const CALL_RELATIONS = new Set(['CALLS', 'ROUTES_TO', 'PUBLISHES', 'SUBSCRIBES']);
+export const DEFAULT_OVERVIEW_NODE_LIMIT = 2_500;
+
+const OVERVIEW_KIND_PRIORITY: Record<string, number> = {
+  workspace: 1_000,
+  project: 900,
+  module: 800,
+  directory: 700,
+  file: 500,
+  class: 400,
+  interface: 400,
+  function: 300,
+  method: 300,
+};
 
 function projection(
   snapshot: GraphSnapshot,
@@ -54,6 +73,7 @@ function projection(
   totals = { nodes: nodes.length, edges: edges.length },
   truncationReason?: string,
   projectIds?: string[],
+  overview = false,
 ): GraphProjection {
   return {
     version: snapshot.version,
@@ -68,6 +88,7 @@ function projection(
       truncated: Boolean(truncationReason),
       truncationReason,
       projectIds,
+      overview,
     },
   };
 }
@@ -125,7 +146,7 @@ export class GraphStore {
       .map((result) => result.node);
   }
 
-  view(view: GraphView, projectIds?: string[]): GraphProjection {
+  view(view: GraphView, projectIds?: string[], options: ViewOptions = {}): GraphProjection {
     const selectedProjects = projectIds?.length ? new Set(projectIds) : null;
     const scopedNodes = selectedProjects
       ? this.snapshot.nodes.filter(
@@ -139,16 +160,9 @@ export class GraphStore {
         )
       : this.snapshot.edges;
     if (view === 'full') {
-      return projection(
-        this.snapshot,
-        scopedNodes,
-        scopedEdges,
-        selectedProjects
-          ? { nodes: scopedNodes.length, edges: scopedEdges.length }
-          : { nodes: this.snapshot.counts.totalNodes, edges: this.snapshot.counts.totalEdges },
-        this.snapshot.truncated ? this.snapshot.truncationReason : undefined,
-        projectIds,
-      );
+      return this.limitView(scopedNodes, scopedEdges, projectIds, options, selectedProjects
+        ? { nodes: scopedNodes.length, edges: scopedEdges.length }
+        : { nodes: this.snapshot.counts.totalNodes, edges: this.snapshot.counts.totalEdges });
     }
 
     const nodePredicate = (node: GraphNode): boolean => {
@@ -167,15 +181,139 @@ export class GraphStore {
     const candidateEdges = scopedEdges.filter(edgePredicate);
     if (view === 'calls') {
       const connected = new Set(candidateEdges.flatMap((edge) => [edge.source, edge.target]));
-      const result = projection(
-        this.snapshot,
+      return this.limitView(
         candidateNodes.filter((node) => connected.has(node.id)),
         candidateEdges,
+        projectIds,
+        options,
       );
-      result.projection.projectIds = projectIds;
-      return result;
     }
-    return projection(this.snapshot, candidateNodes, candidateEdges, undefined, undefined, projectIds);
+    return this.limitView(candidateNodes, candidateEdges, projectIds, options);
+  }
+
+  private limitView(
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    projectIds: string[] | undefined,
+    options: ViewOptions,
+    totals = { nodes: nodes.length, edges: edges.length },
+  ): GraphProjection {
+    const maxNodes = Math.max(100, Math.min(options.maxNodes ?? DEFAULT_OVERVIEW_NODE_LIMIT, 10_000));
+    if (options.complete || nodes.length <= maxNodes) {
+      return projection(
+        this.snapshot,
+        nodes,
+        edges,
+        totals,
+        this.snapshot.truncated ? this.snapshot.truncationReason : undefined,
+        projectIds,
+      );
+    }
+
+    const selected = this.selectOverviewNodes(nodes, edges, maxNodes);
+    const selectedIds = new Set(selected.map((node) => node.id));
+    const matchingEdges = edges.filter(
+      (edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target),
+    );
+    const maxEdges = maxNodes * 8;
+    const selectedEdges = matchingEdges.length <= maxEdges
+      ? matchingEdges
+      : [...matchingEdges]
+          .sort((left, right) => this.overviewEdgeScore(right) - this.overviewEdgeScore(left)
+            || left.id.localeCompare(right.id))
+          .slice(0, maxEdges);
+    const overviewReason = `当前为全空间代表性总览（${selected.length.toLocaleString()} / ${totals.nodes.toLocaleString()} 个匹配节点），点击“渲染全部”可加载完整图谱。`;
+    const reason = [overviewReason, this.snapshot.truncated ? this.snapshot.truncationReason : undefined]
+      .filter(Boolean)
+      .join(' ');
+    return projection(this.snapshot, selected, selectedEdges, totals, reason, projectIds, true);
+  }
+
+  private selectOverviewNodes(nodes: GraphNode[], edges: GraphEdge[], maxNodes: number): GraphNode[] {
+    const candidateIds = new Set(nodes.map((node) => node.id));
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const selected = new Map<string, GraphNode>();
+    const roots = nodes.filter((node) => node.kind === 'workspace' || node.kind === 'project');
+    for (const node of roots.slice(0, maxNodes)) selected.set(node.id, node);
+
+    const containsBySource = new Map<string, string[]>();
+    for (const edge of edges) {
+      if (edge.kind !== 'CONTAINS' || !candidateIds.has(edge.source) || !candidateIds.has(edge.target)) continue;
+      const children = containsBySource.get(edge.source) ?? [];
+      children.push(edge.target);
+      containsBySource.set(edge.source, children);
+    }
+
+    const projectRoots = roots.filter((node) => node.kind === 'project');
+    const hierarchyBuckets = (projectRoots.length ? projectRoots : roots).map((root) => {
+      const queue = [root.id];
+      const visited = new Set(queue);
+      const ordered: GraphNode[] = [];
+      let cursor = 0;
+      while (cursor < queue.length) {
+        const parent = queue[cursor];
+        cursor += 1;
+        for (const child of containsBySource.get(parent) ?? []) {
+          if (visited.has(child)) continue;
+          visited.add(child);
+          queue.push(child);
+          const node = nodeById.get(child);
+          if (node) ordered.push(node);
+        }
+      }
+      return ordered;
+    });
+    const hierarchyTarget = Math.max(selected.size, Math.floor(maxNodes * 0.6));
+    this.takeRoundRobin(hierarchyBuckets, selected, hierarchyTarget);
+
+    const degree = new Map<string, number>();
+    for (const edge of edges) {
+      degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+      degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+    }
+    const buckets = new Map<string, GraphNode[]>();
+    for (const node of nodes) {
+      if (selected.has(node.id)) continue;
+      const key = node.projectId ?? '__workspace__';
+      const bucket = buckets.get(key) ?? [];
+      bucket.push(node);
+      buckets.set(key, bucket);
+    }
+    const rankedBuckets = [...buckets.values()].map((bucket) => bucket.sort((left, right) => {
+      const leftScore = (degree.get(left.id) ?? 0) * 1_000 + (OVERVIEW_KIND_PRIORITY[left.kind] ?? 0);
+      const rightScore = (degree.get(right.id) ?? 0) * 1_000 + (OVERVIEW_KIND_PRIORITY[right.kind] ?? 0);
+      return rightScore - leftScore || left.label.localeCompare(right.label) || left.id.localeCompare(right.id);
+    }));
+    this.takeRoundRobin(rankedBuckets, selected, maxNodes);
+    return [...selected.values()];
+  }
+
+  private takeRoundRobin(
+    buckets: GraphNode[][],
+    selected: Map<string, GraphNode>,
+    targetSize: number,
+  ): void {
+    const offsets = buckets.map(() => 0);
+    let progressed = true;
+    while (selected.size < targetSize && progressed) {
+      progressed = false;
+      for (let index = 0; index < buckets.length && selected.size < targetSize; index += 1) {
+        const bucket = buckets[index];
+        while (offsets[index] < bucket.length && selected.has(bucket[offsets[index]].id)) offsets[index] += 1;
+        const node = bucket[offsets[index]];
+        if (!node) continue;
+        offsets[index] += 1;
+        selected.set(node.id, node);
+        progressed = true;
+      }
+    }
+  }
+
+  private overviewEdgeScore(edge: GraphEdge): number {
+    if (edge.kind === 'CONTAINS') return 300;
+    if (CALL_RELATIONS.has(edge.kind)) return 200;
+    if (STRUCTURE_RELATIONS.has(edge.kind)) return 100;
+    return 0;
   }
 
   neighborhood(options: NeighborhoodOptions): GraphProjection {

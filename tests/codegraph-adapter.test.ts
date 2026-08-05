@@ -128,4 +128,45 @@ describe('CodeGraph adapter', () => {
     expect(snapshot.truncated).toBe(true);
     expect(snapshot.truncationReason).toContain('Missing');
   });
+
+  it('aggregates a large project without overflowing the JavaScript call stack', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codeatlas-cg-large-'));
+    const workspace = await initWorkspace(root);
+    const databasePath = createCodeGraphFixture(root);
+    const db = new DatabaseSync(databasePath);
+    const insertNode = db.prepare(`
+      INSERT INTO nodes (
+        id, kind, name, qualified_name, file_path, language,
+        start_line, end_line, start_column, end_column, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertEdge = db.prepare(
+      'INSERT INTO edges (source, target, kind, metadata, line, col, provenance) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    db.exec('BEGIN');
+    for (let index = 0; index < 70_000; index += 1) {
+      const nodeId = `bulk-${index}`;
+      insertNode.run(
+        nodeId,
+        'function',
+        nodeId,
+        `bulk.${nodeId}`,
+        'src/session.ts',
+        'typescript',
+        2,
+        3,
+        0,
+        1,
+        2,
+      );
+      insertEdge.run('n-auth', nodeId, 'calls', '{}', 7, 2, 'static');
+    }
+    db.exec('COMMIT');
+    db.close();
+
+    const snapshot = await loadCodeGraphSnapshot(workspace);
+
+    expect(snapshot.nodes.length).toBeGreaterThan(70_000);
+    expect(snapshot.edges.length).toBeGreaterThan(70_000);
+  });
 });
