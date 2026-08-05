@@ -4,6 +4,7 @@ import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
 import type { Attributes } from 'graphology-types';
 import type { AtlasNode, GraphProjection } from '../types';
+import { NodeDragController } from './drag';
 import { edgeIsOutsideSelection, nodeIsOutsideSelection } from './focus';
 import { NodeHoverCard } from './NodeHoverCard';
 
@@ -165,6 +166,7 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
   useEffect(() => {
     if (!containerRef.current) return;
     const graph = buildGraph(graphData);
+    const drag = new NodeDragController();
     const renderer = new Sigma(graph, containerRef.current, {
       allowInvalidContainer: false,
       defaultNodeColor: '#9cb2ab',
@@ -243,11 +245,36 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
         };
       },
     });
+    renderer.on('downNode', ({ node, event, preventSigmaDefault }) => {
+      drag.begin(node, event);
+      if (!renderer.getCustomBBox()) renderer.setCustomBBox(renderer.getBBox());
+      preventSigmaDefault();
+    });
+    renderer.getMouseCaptor().on('mousemovebody', (event) => {
+      const node = drag.move(event);
+      if (!node) return;
+      event.preventSigmaDefault();
+      event.original.preventDefault();
+      event.original.stopPropagation();
+      const position = renderer.viewportToGraph(event);
+      graph.mergeNodeAttributes(node, position);
+      renderer.getContainer().style.cursor = 'grabbing';
+    });
+    renderer.getMouseCaptor().on('mouseup', () => {
+      const moved = drag.end();
+      if (!moved) return;
+      renderer.getContainer().style.cursor = 'grab';
+      window.setTimeout(() => drag.clearSuppressedClick(), 0);
+    });
     renderer.on('clickNode', ({ node }) => {
+      if (drag.consumeSuppressedClick()) return;
       const attributes = graph.getNodeAttributes(node);
       onSelect(attributes.node as AtlasNode);
     });
-    renderer.on('clickStage', () => onSelect(null));
+    renderer.on('clickStage', () => {
+      if (drag.consumeSuppressedClick()) return;
+      onSelect(null);
+    });
     renderer.on('enterNode', ({ node, event }) => {
       hoveredRef.current = node;
       const attributes = graph.getNodeAttributes(node);
@@ -259,7 +286,7 @@ export function GraphCanvas({ graphData, selectedId, onSelect }: GraphCanvasProp
         x: Math.max(14, Math.min(event.x + 18, container.clientWidth - cardWidth - 14)),
         y: Math.max(14, Math.min(event.y + 18, container.clientHeight - cardHeight - 14)),
       });
-      renderer.getContainer().style.cursor = 'crosshair';
+      renderer.getContainer().style.cursor = 'grab';
       renderer.refresh();
     });
     renderer.on('leaveNode', () => {

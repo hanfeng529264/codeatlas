@@ -24,6 +24,7 @@
 - 多个独立 CodeGraph SQLite 索引的命名空间隔离与统一聚合。
 - 全部项目与单项目图谱切换、项目范围搜索、项目健康状态和稳定配色。
 - 基于工作空间 `package.json` 明确依赖的跨项目 `DEPENDS_ON` 关系。
+- 节点可临时拖动并固定，关系线实时跟随；切换视图或刷新后恢复默认布局。
 - 多项目 API、单元/集成测试、Playwright 端到端测试和 GitHub Actions CI。
 
 ### Changed
